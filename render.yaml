@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: transfer-news-generator
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --workers 1 --threads 2 --timeout 300
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: APP_ACCESS_KEY
+        sync: false
+      - key: REQUIRE_ACCESS_KEY
+        value: 1
+      - key: GITHUB_URL
+        sync: false
+      - key: JOB_TTL_MINUTES
+        value: 60
+      - key: MAX_FILE_MB
+        value: 20
+      - key: COOKIE_SECURE
+        value: 1

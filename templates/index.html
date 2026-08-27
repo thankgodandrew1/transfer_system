@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div class="shell hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">From source files to publish-ready news</p>
+      <h1>Generate the complete Transfer News package in one verified run.</h1>
+      <p class="hero-lede">Upload the current transfer records, review corrections and warnings, then download the Word, PDF, workbook, statistics, updated roster, and complete ZIP package.</p>
+      <div class="hero-actions"><a class="button primary" href="#generator">Start a transfer</a><a class="button secondary" href="{{ url_for('guide') }}">Watch the walkthrough</a></div>
+      <div class="privacy-note"><span aria-hidden="true">●</span><div><strong>Confidential by design</strong><br>Each run is isolated. Files expire after {{ job_ttl_minutes }} minutes.</div></div>
+    </div>
+    <aside class="output-preview" aria-label="Generated package preview">
+      <div class="preview-top"><span>COMPLETE PACKAGE</span><span class="status-dot">Ready</span></div>
+      <div class="preview-title"><small>NIGERIA UYO MISSION</small><strong>TRANSFER NEWS</strong><span>Verified zone-by-zone assignments</span></div>
+      <div class="preview-stats"><div><strong>12</strong><span>Zones</span></div><div><strong>174</strong><span>Missionaries</span></div><div><strong>9</strong><span>Downloads</span></div></div>
+      <div class="preview-files"><span>PDF</span><span>DOCX</span><span>XLSX</span><span>CSV</span><span>ZIP</span></div>
+    </aside>
+  </div>
+</section>
+
+<section id="generator" class="generator-section">
+  <div class="shell">
+    <div class="section-heading"><div><p class="eyebrow">Generation workspace</p><h2>Provide the four transfer records</h2></div><p>All four files are required for fully verified output. Each file may be up to {{ max_file_mb }} MB.</p></div>
+    <form id="generation-form" class="generator-form" action="{{ url_for('generate') }}" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="step-card">
+        <div class="step-number">01</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Transfer records</h3><span>Required</span></div>
+          <div class="upload-grid">
+            <label class="upload-field"><input type="file" name="management_pdf" accept="application/pdf,.pdf" required><span class="upload-icon">TM</span><strong>Current Transfer Management</strong><small>PDF exported from iMOS</small><em data-file-label>Choose PDF</em></label>
+            <label class="upload-field"><input type="file" name="previous_news_pdf" accept="application/pdf,.pdf" required><span class="upload-icon">PN</span><strong>Previous Transfer News</strong><small>Use the last updated-roster PDF</small><em data-file-label>Choose PDF</em></label>
+            <label class="upload-field"><input type="file" name="current_report" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required><span class="upload-icon">CR</span><strong>Current Transfer Report</strong><small>Authoritative current roster XLSX</small><em data-file-label>Choose XLSX</em></label>
+            <label class="upload-field"><input type="file" name="old_report" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required><span class="upload-icon">OR</span><strong>Previous Transfer Report</strong><small>Authoritative prior roster XLSX</small><em data-file-label>Choose XLSX</em></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">02</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Publication details</h3><span>Review</span></div>
+          <div class="field-grid">
+            <label><span>Mission name</span><input type="text" name="mission_name" value="{{ defaults.mission_name }}" maxlength="120" required></label>
+            <label><span>Mission president</span><input type="text" name="president" value="{{ defaults.president }}" maxlength="120" required></label>
+            <label><span>Prepared by</span><input type="text" name="prepared_by" value="{{ defaults.prepared_by }}" maxlength="160" required></label>
+            <label><span>Transfer title <small>optional override</small></span><input type="text" name="transfer_title" maxlength="120" placeholder="Detected automatically from the PDF"></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">03</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Optional controls</h3><span>Advanced</span></div>
+          <div class="optional-grid">
+            <label class="compact-upload"><span><strong>Word template</strong><small>DOCX with supported placeholders</small></span><input type="file" name="word_template" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
+            <label class="compact-upload"><span><strong>Manual corrections</strong><small>CSV with Name, Field, Value</small></span><input type="file" name="manual_corrections" accept=".csv,text/csv"></label>
+          </div>
+          <div class="check-row">
+            <label class="check-card"><input type="checkbox" name="include_roster" checked><span><strong>Create updated roster</strong><small>Recommended for the next transfer cycle</small></span></label>
+            <label class="check-card"><input type="checkbox" name="include_stats" checked><span><strong>Create statistics</strong><small>Word and PDF summaries</small></span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="submit-bar">
+        <div><strong>Ready to generate?</strong><span>The run may take a minute on free hosting after the service wakes up.</span></div>
+        <button class="button primary large" type="submit"><span>Generate Transfer News</span><span aria-hidden="true">→</span></button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<div id="processing-overlay" class="processing-overlay" hidden role="status" aria-live="polite">
+  <div class="processing-card"><div class="spinner" aria-hidden="true"></div><p class="eyebrow">Secure generation in progress</p><h2>Building your transfer package</h2><p id="processing-message">Validating uploaded records…</p><div class="progress-track"><span></span></div><small>Keep this tab open. Your files are being handled in an isolated temporary workspace.</small></div>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}Secure access · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="access-section"><div class="access-card"><span class="brand-mark large" aria-hidden="true">TN</span><p class="eyebrow">Protected workspace</p><h1>Enter the mission access key.</h1><p>This generator handles confidential transfer records. Ask the system owner for the shared key.</p><form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><label><span>Access key</span><input type="password" name="access_key" autocomplete="current-password" autofocus required></label><button class="button primary large" type="submit">Open generator</button></form></div></section>
+{% endblock %}

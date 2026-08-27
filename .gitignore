@@ -1,0 +1,41 @@
+# Confidential inputs and generated transfer artifacts
+data/*.pdf
+data/*.xlsx
+data/manual_corrections.csv
+output/
+outputs/
+extracted/
+logs/
+jobs/
+tmp/
+
+# Reference documents that contain real transfer records
+reference/*.pdf
+reference/_extracted_images/
+*.docx
+*.pdf
+*.xlsx
+*.csv
+
+# Keep safe templates and examples when explicitly unignored
+!templates/*.docx
+!data/*.example.csv
+!data/samples/.gitkeep
+
+# Python and local environment
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.pytest-tmp/
+.venv/
+venv/
+.env
+
+# Editors and operating systems
+.DS_Store
+Thumbs.db
+~$*
+.idea/
+.vscode/
+
+.claude

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Generation result · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="result-hero {{ job.status }}">
+  <div class="shell narrow">
+    {% if job.status == 'complete' %}
+      <p class="eyebrow">Generation complete</p><h1>Your Transfer News package is ready.</h1><p>Download the complete ZIP first, then inspect the corrections and warnings before publishing.</p>
+    {% elif job.status == 'blocked' %}
+      <p class="eyebrow">Review required</p><h1>Publication paused safely.</h1><p>{{ job.error }}</p>
+    {% else %}
+      <p class="eyebrow">Generation stopped</p><h1>This run needs attention.</h1><p>{{ job.error or 'The transfer could not be generated.' }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="result-section"><div class="shell narrow">
+  {% if job.status in ['complete', 'blocked'] %}
+    <div class="summary-grid">
+      <div><strong>{{ job.summary.missionaries }}</strong><span>Total missionaries</span></div>
+      <div><strong>{{ job.summary.zones }}</strong><span>Current zones</span></div>
+      <div><strong>{{ job.summary.new_missionaries }}</strong><span>New missionaries</span></div>
+      <div><strong>{{ job.summary.corrections }}</strong><span>Auto-corrections</span></div>
+    </div>
+    <div class="result-grid">
+      <div class="download-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Downloads</p><h2>Generated files</h2></div><span>Expires {{ job.expires_at[:16].replace('T', ' ') }} UTC</span></div>
+        <div class="download-list">
+          {% for file in job.files %}
+          <a class="download-row {% if file.kind == 'zip' %}featured{% endif %}" href="{{ url_for('download', job_id=job.job_id, filename=file.name) }}">
+            <span class="file-kind">{{ file.kind|upper }}</span><span><strong>{{ file.label }}</strong><small>{{ (file.size / 1024)|round(1) }} KB</small></span><span class="download-arrow" aria-hidden="true">↓</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      <aside class="review-panel">
+        <p class="eyebrow">Review before sharing</p><h2>Quality check</h2>
+        <ul class="review-list"><li><strong>{{ job.summary.changes }}</strong> detected changes</li><li><strong>{{ job.summary.corrections }}</strong> verified corrections</li><li><strong>{{ job.summary.notes }}</strong> verification notes</li><li><strong>{{ job.warnings|length }}</strong> parser warnings</li></ul>
+        {% if job.status == 'blocked' %}<div class="blocked-note">No publishing documents were created. Resolve every BLOCKING row in the Verification sheet and run the generator again.</div>{% endif %}
+        {% if job.warnings %}<details><summary>Read parser warnings</summary><ol>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ol></details>{% elif job.status == 'complete' %}<div class="success-note">No parser warnings were emitted.</div>{% endif %}
+      </aside>
+    </div>
+  {% endif %}
+  <div class="result-actions"><a class="button primary" href="{{ url_for('index') }}">Start another transfer</a><a class="button secondary" href="{{ url_for('guide') }}">Open the user guide</a></div>
+</div></section>
+{% endblock %}

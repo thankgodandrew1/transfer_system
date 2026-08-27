@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}How to use · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="guide-hero"><div class="shell narrow"><p class="eyebrow">User walkthrough</p><h1>From iMOS export to finished Transfer News.</h1><p>Follow the five steps below. Use sanitized sample files when demonstrating the system publicly.</p></div></section>
+<section class="guide-section"><div class="shell narrow">
+  <div class="video-frame"><video controls preload="metadata" poster="{{ url_for('static', filename='video-poster.png') }}"><source src="{{ url_for('static', filename='walkthrough.mp4') }}" type="video/mp4"><track kind="captions" src="{{ url_for('static', filename='walkthrough.vtt') }}" srclang="en" label="English" default>Your browser cannot play the video. Use the written steps below.</video></div>
+  <ol class="guide-steps">
+    <li><span>01</span><div><h2>Export the four records</h2><p>Prepare the current Transfer Management PDF, previous Transfer News PDF, current roster report, and previous roster report.</p></div></li>
+    <li><span>02</span><div><h2>Upload and confirm details</h2><p>Select each file, verify the mission and leadership names, and override the title only when automatic detection is unsuitable.</p></div></li>
+    <li><span>03</span><div><h2>Generate securely</h2><p>Keep the browser tab open while the system parses, matches, verifies, and renders the package.</p></div></li>
+    <li><span>04</span><div><h2>Review corrections and warnings</h2><p>Open the workbook, inspect the Verification and Changes sheets, and read any warnings on the results page.</p></div></li>
+    <li><span>05</span><div><h2>Download and continue the cycle</h2><p>Download the ZIP. Keep the updated-roster PDF because it becomes the previous Transfer News input next cycle.</p></div></li>
+  </ol>
+  <div class="guide-callout"><strong>Privacy reminder</strong><p>Never place real transfer files in GitHub, email attachments, tutorial recordings, or a public support request.</p></div>
+</div></section>
+{% endblock %}

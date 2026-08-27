@@ -1,0 +1,3 @@
+{% extends "base.html" %}
+{% block title %}Request error · {{ app_name }}{% endblock %}
+{% block content %}<section class="access-section"><div class="access-card"><p class="eyebrow">Request stopped</p><h1>We could not process that submission.</h1><p>{{ message }}</p><a class="button primary" href="{{ url_for('index') }}">Return to generator</a></div></section>{% endblock %}
