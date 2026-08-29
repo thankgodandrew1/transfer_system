@@ -33,6 +33,15 @@ def test_health_and_security_headers(monkeypatch, tmp_path: Path) -> None:
     assert client.get("/static/styles.css").headers["Cache-Control"] == "public, max-age=86400"
 
 
+def test_branding_links_creator_repository_and_favicon(monkeypatch, tmp_path: Path) -> None:
+    client = _client(monkeypatch, tmp_path)
+    response = client.get("/")
+    assert response.status_code == 200
+    assert b"ThankGod Andrew" in response.data
+    assert b"https://github.com/thankgodandrew1/transfer_system" in response.data
+    assert b"favicon.svg" in response.data
+
+
 def test_generation_rejects_expired_form(monkeypatch, tmp_path: Path) -> None:
     client = _client(monkeypatch, tmp_path)
     response = client.post("/generate", data={})

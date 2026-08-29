@@ -2,7 +2,7 @@
 
 A small Flask web application that turns mission transfer exports into a verified, downloadable Transfer News package. It runs as a native Python service—there is no Docker requirement and no Microsoft Word or LibreOffice dependency for PDF generation.
 
-The repository link shown in the web header is controlled by `GITHUB_URL`. Set it to your GitHub profile or repository URL after you create the repository.
+Created by [ThankGod Andrew](https://github.com/thankgodandrew1/transfer_system). The site header and footer link directly to the project repository, and the application includes its own Transfer News favicon.
 
 ## What the system does
 
@@ -73,7 +73,8 @@ python app.py
 | `APP_ACCESS_KEY` | Shared key required before opening the generator | blank |
 | `REQUIRE_ACCESS_KEY` | Refuse startup if a strong access key is missing | `0` |
 | `FLASK_SECRET_KEY` | Signs browser sessions and CSRF tokens | random per restart |
-| `GITHUB_URL` | GitHub profile or repository link shown in the site | hidden when blank |
+| `GITHUB_URL` | GitHub profile or repository link shown in the site | `https://github.com/thankgodandrew1/transfer_system` |
+| `CREATOR_NAME` | Creator credit shown in the footer | `ThankGod Andrew` |
 | `JOB_TTL_MINUTES` | Temporary-file lifetime | `60` |
 | `MAX_FILE_MB` | Maximum size of each upload | `20` |
 | `COOKIE_SECURE` | Send session cookies over HTTPS only | `0` locally, `1` in production |
@@ -126,4 +127,3 @@ Follow [docs/deployment.md](docs/deployment.md) for the full GitHub and Render w
 - `generate_transfer_pdf.py` — native ReportLab PDF renderer
 - `templates/` and `static/` — responsive web interface and walkthrough assets
 - `tests/` — synthetic unit/web tests and opt-in local integration test
-

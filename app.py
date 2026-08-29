@@ -52,7 +52,11 @@ JOB_ROOT = Path(os.getenv("TRANSFER_JOB_ROOT", Path(tempfile.gettempdir()) / "tr
 JOB_ROOT.mkdir(parents=True, exist_ok=True)
 
 APP_NAME = os.getenv("APP_NAME", "Transfer News Generator")
-GITHUB_URL = os.getenv("GITHUB_URL", "").strip()
+GITHUB_URL = os.getenv(
+    "GITHUB_URL",
+    "https://github.com/thankgodandrew1/transfer_system",
+).strip()
+CREATOR_NAME = os.getenv("CREATOR_NAME", "ThankGod Andrew").strip() or "ThankGod Andrew"
 ACCESS_KEY = os.getenv("APP_ACCESS_KEY", "")
 REQUIRE_ACCESS_KEY = os.getenv("REQUIRE_ACCESS_KEY", "0") == "1"
 JOB_TTL_MINUTES = max(int(os.getenv("JOB_TTL_MINUTES", "60")), 10)
@@ -452,6 +456,7 @@ def common_context() -> dict[str, Any]:
     return {
         "app_name": APP_NAME,
         "github_url": GITHUB_URL,
+        "creator_name": CREATOR_NAME,
         "csrf_token": _csrf_token(),
         "job_ttl_minutes": JOB_TTL_MINUTES,
         "max_file_mb": MAX_FILE_MB,

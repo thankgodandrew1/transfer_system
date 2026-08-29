@@ -8,7 +8,7 @@ watermark, confidentiality footer, and assignment key.
 from __future__ import annotations
 
 from datetime import datetime
-from html import escape
+from html import escape, unescape
 from pathlib import Path
 
 import pandas as pd
@@ -48,6 +48,9 @@ from generate_transfer_document import (
     PANEL_GRAY,
     TEXT_DARK,
     TEXT_MID,
+    WATERMARK_COVER_CENTER_Y_IN,
+    WATERMARK_SIZE_IN,
+    WATERMARK_ZONE_CENTER_Y_IN,
     ZEBRA_TINT,
     badge_colors_for,
     compute_stats,
@@ -64,31 +67,48 @@ def _color(value: str) -> colors.Color:
     return colors.HexColor(f"#{value}")
 
 
-def _font_name() -> str:
-    """Use an available Microsoft-compatible font when one is bundled."""
+def _font_names() -> tuple[str, str, str]:
+    """Register a portable sans family, with real bold and italic faces."""
+    base_dir = Path(__file__).resolve().parent
     candidates = [
-        Path("assets/Aptos.ttf"),
-        Path("assets/Calibri.ttf"),
-        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        (
+            base_dir / "assets" / "Aptos.ttf",
+            base_dir / "assets" / "Aptos-Bold.ttf",
+            base_dir / "assets" / "Aptos-Italic.ttf",
+        ),
+        (
+            Path("C:/Windows/Fonts/arial.ttf"),
+            Path("C:/Windows/Fonts/arialbd.ttf"),
+            Path("C:/Windows/Fonts/ariali.ttf"),
+        ),
+        (
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+            Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf"),
+        ),
     ]
-    for path in candidates:
-        if not path.exists():
+    for regular, bold, italic in candidates:
+        if not all(path.exists() for path in (regular, bold, italic)):
             continue
         try:
-            pdfmetrics.registerFont(TTFont("TransferSans", str(path)))
-            return "TransferSans"
+            pdfmetrics.registerFont(TTFont("TransferSans", str(regular)))
+            pdfmetrics.registerFont(TTFont("TransferSans-Bold", str(bold)))
+            pdfmetrics.registerFont(TTFont("TransferSans-Italic", str(italic)))
+            return "TransferSans", "TransferSans-Bold", "TransferSans-Italic"
         except Exception:
             continue
-    return "Helvetica"
+    return "Helvetica", "Helvetica-Bold", "Helvetica-Oblique"
 
 
-FONT = _font_name()
-FONT_BOLD = "Helvetica-Bold" if FONT == "Helvetica" else FONT
+FONT, FONT_BOLD, FONT_ITALIC = _font_names()
 
 
 def _p(text: object, style: ParagraphStyle, *, markup: bool = False) -> Paragraph:
     value = str(text or "")
     if not markup:
+        # Workbook values may already contain HTML entities. Decode them once
+        # before escaping for ReportLab so "&amp;" is printed as "&".
+        value = unescape(value)
         value = escape(value).replace("\n", "<br/>")
     return Paragraph(value, style)
 
@@ -116,22 +136,23 @@ def _styles() -> dict[str, ParagraphStyle]:
         ),
         "zone": ParagraphStyle(
             "ZoneTitle", parent=styles["Heading1"], fontName=FONT_BOLD,
-            fontSize=12, leading=14, textColor=_color(BANNER_GREEN), alignment=TA_LEFT,
+            fontSize=14, leading=18, textColor=_color(BANNER_GREEN), alignment=TA_LEFT,
         ),
         "cell": ParagraphStyle(
             "Cell", parent=styles["Normal"], fontName=FONT,
-            fontSize=7.2, leading=8.4, textColor=_color(TEXT_MID), alignment=TA_LEFT,
-            wordWrap="CJK",
+            fontSize=13.5, leading=16.5, textColor=_color(TEXT_MID), alignment=TA_LEFT,
         ),
         "cell_center": ParagraphStyle(
             "CellCenter", parent=styles["Normal"], fontName=FONT,
-            fontSize=7.2, leading=8.4, textColor=_color(TEXT_MID), alignment=TA_CENTER,
-            wordWrap="CJK",
+            fontSize=13.5, leading=16.5, textColor=_color(TEXT_MID), alignment=TA_CENTER,
         ),
         "cell_bold": ParagraphStyle(
             "CellBold", parent=styles["Normal"], fontName=FONT_BOLD,
-            fontSize=7.2, leading=8.4, textColor=_color(TEXT_DARK), alignment=TA_LEFT,
-            wordWrap="CJK",
+            fontSize=13.5, leading=16.5, textColor=_color(TEXT_DARK), alignment=TA_LEFT,
+        ),
+        "cell_header": ParagraphStyle(
+            "CellHeader", parent=styles["Normal"], fontName=FONT_BOLD,
+            fontSize=13.5, leading=16.5, textColor=colors.white, alignment=TA_CENTER,
         ),
         "small": ParagraphStyle(
             "Small", parent=styles["Normal"], fontName=FONT,
@@ -144,10 +165,10 @@ def _styles() -> dict[str, ParagraphStyle]:
     }
 
 
-def _draw_watermark(canvas, center_y: float = PAGE_HEIGHT / 2) -> None:
+def _draw_watermark(canvas, center_y: float) -> None:
     if not MISSION_WATERMARK_PATH.exists():
         return
-    size = 5.5 * inch
+    size = WATERMARK_SIZE_IN * inch
     canvas.saveState()
     canvas.drawImage(
         str(MISSION_WATERMARK_PATH),
@@ -161,16 +182,267 @@ def _draw_watermark(canvas, center_y: float = PAGE_HEIGHT / 2) -> None:
     canvas.restoreState()
 
 
-def _first_page(canvas, document) -> None:
+def _font_ascent(font_name: str, size: float) -> float:
+    ascent, _descent = pdfmetrics.getAscentDescent(font_name, size)
+    return ascent
+
+
+def _baseline_for_top(font_name: str, size: float, top: float) -> float:
+    return PAGE_HEIGHT - top - _font_ascent(font_name, size)
+
+
+def _draw_centered_text(
+    canvas,
+    text: str,
+    *,
+    top: float,
+    font_name: str,
+    size: float,
+    color: str | colors.Color,
+    char_space: float = 0,
+    center_x: float = PAGE_WIDTH / 2,
+) -> None:
+    value = str(text or "")
+    text_width = pdfmetrics.stringWidth(value, font_name, size)
+    if value:
+        text_width += max(len(value) - 1, 0) * char_space
+    text_object = canvas.beginText()
+    text_object.setTextOrigin(center_x - text_width / 2, _baseline_for_top(font_name, size, top))
+    text_object.setFont(font_name, size)
+    text_object.setCharSpace(char_space)
+    text_object.setFillColor(_color(color) if isinstance(color, str) else color)
+    text_object.textLine(value)
+    canvas.drawText(text_object)
+
+
+def _draw_segments(canvas, x: float, baseline: float, segments: list[tuple[str, str, float, str]]) -> None:
+    cursor = x
+    for value, font_name, size, color in segments:
+        canvas.setFont(font_name, size)
+        canvas.setFillColor(_color(color))
+        canvas.drawString(cursor, baseline, value)
+        cursor += pdfmetrics.stringWidth(value, font_name, size)
+
+
+def _wrap_text(text: str, font_name: str, size: float, width: float) -> list[str]:
+    words = str(text or "").split()
+    if not words:
+        return [""]
+    lines: list[str] = []
+    current = words[0]
+    for word in words[1:]:
+        candidate = f"{current} {word}"
+        if pdfmetrics.stringWidth(candidate, font_name, size) <= width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
+
+
+def _zone_label(zone: object) -> str:
+    value = str(zone or "").strip().upper()
+    return value if value.endswith(" ZONE") else f"{value} ZONE"
+
+
+def _draw_publication_cell(
+    canvas,
+    *,
+    x: float,
+    top: float,
+    width: float,
+    height: float,
+    label: str,
+    value: str,
+    note: str,
+) -> None:
+    inner_width = width - 12
+    size = 14.0
+    leading = 18.6
+    value_lines = _wrap_text(value.upper(), FONT_BOLD, size, inner_width)
+    note_size = 13.0 if note.upper() == "ASSISTANT TO THE PRESIDENT" else size
+    note_lines = _wrap_text(note.upper(), FONT_ITALIC, note_size, inner_width)
+    lines = [
+        (label.upper(), FONT_BOLD, MUTED_GRAY, size),
+        *[(line, FONT_BOLD, BANNER_GREEN, size) for line in value_lines],
+        *[(line, FONT_ITALIC, MUTED_GRAY, note_size) for line in note_lines],
+    ]
+    if len(lines) * leading > height - 10:
+        size = 12.0
+        leading = 16.0
+        value_lines = _wrap_text(value.upper(), FONT_BOLD, size, inner_width)
+        note_size = size
+        note_lines = _wrap_text(note.upper(), FONT_ITALIC, note_size, inner_width)
+        lines = [
+            (label.upper(), FONT_BOLD, MUTED_GRAY, size),
+            *[(line, FONT_BOLD, BANNER_GREEN, size) for line in value_lines],
+            *[(line, FONT_ITALIC, MUTED_GRAY, note_size) for line in note_lines],
+        ]
+
+    block_height = len(lines) * leading
+    line_top = top + (height - block_height) / 2 + 6.7
+    for text, font_name, color, line_size in lines:
+        baseline = _baseline_for_top(font_name, line_size, line_top)
+        canvas.setFont(font_name, line_size)
+        canvas.setFillColor(_color(color))
+        canvas.drawString(x + 8, baseline, text)
+        line_top += leading
+
+
+def _draw_reference_cover(
+    canvas,
+    mission_name: str,
+    transfer_title: str,
+    stats: dict[str, int],
+    grouped_zones: list[tuple[str, pd.DataFrame]],
+    president: str,
+    prepared_by: str,
+) -> None:
+    """Draw the measured publication cover from the supplied mission PDF."""
     canvas.saveState()
-    _draw_watermark(canvas, PAGE_HEIGHT / 2 - 3)
+    _draw_watermark(canvas, PAGE_HEIGHT - WATERMARK_COVER_CENTER_Y_IN * inch)
+
+    # Full-width mission masthead, measured from the supplied publication.
+    canvas.setFillColor(_color(BANNER_GREEN))
+    canvas.rect(0, PAGE_HEIGHT - 89.4, PAGE_WIDTH, 18.6, fill=1, stroke=0)
+    canvas.rect(0, PAGE_HEIGHT - 110.0, PAGE_WIDTH, 18.6, fill=1, stroke=0)
+    canvas.setFillColor(_color(ACCENT_GOLD))
+    canvas.rect(0, PAGE_HEIGHT - 112.2, PAGE_WIDTH, 2.2, fill=1, stroke=0)
+    _draw_centered_text(
+        canvas, mission_name.upper(), top=77.8, font_name=FONT_BOLD, size=14,
+        color=ACCENT_GOLD, char_space=2.8,
+    )
+    _draw_centered_text(
+        canvas, "THE CHURCH OF JESUS CHRIST OF LATTER-DAY SAINTS", top=98.2,
+        font_name=FONT, size=14, color=colors.white, char_space=0.08,
+    )
+
+    cover_title = transfer_title.upper()
+    title_size = 14.0
+    while title_size > 11 and pdfmetrics.stringWidth(cover_title, FONT_BOLD, title_size) > 560:
+        title_size -= 0.5
+    _draw_centered_text(
+        canvas, cover_title, top=135.3, font_name=FONT_BOLD, size=title_size,
+        color=BANNER_GREEN, char_space=0.35,
+    )
+    _draw_centered_text(
+        canvas, "COMPLETE ZONE-BY-ZONE TRANSFER ASSIGNMENTS - MISSION LEADERSHIP COUNCIL",
+        top=154.1, font_name=FONT_ITALIC, size=12.7, color=MUTED_GRAY,
+    )
+
+    # Compact, single-strip statistics cards.
+    tiles = [
+        ("ZONES", stats.get("Zones", 0), GREEN_TINT, BANNER_GREEN),
+        ("MISSIONARIES", stats.get("Total Missionaries in Mission", 0), BLUE_TINT, BLUE),
+        ("LEADERSHIP ROLES", stats.get("Leadership Roles", 0), GOLD_TINT, GOLD_TEXT),
+        ("NEW MISSIONARIES", stats.get("New Missionaries", 0), NEW_MISSIONARY_FILL, NEW_MISSIONARY_TEXT),
+    ]
+    tile_x, tile_top, tile_width, tile_height = 60.9, 183.4, 164.925, 44.5
+    for index, (label, value, background, foreground) in enumerate(tiles):
+        x = tile_x + index * tile_width
+        y = PAGE_HEIGHT - tile_top - tile_height
+        canvas.setFillColor(_color(background))
+        canvas.setStrokeColor(_color("DDDDDD"))
+        canvas.setLineWidth(0.35)
+        canvas.rect(x, y, tile_width, tile_height, fill=1, stroke=1)
+        canvas.setFillColor(_color(foreground))
+        canvas.rect(x, PAGE_HEIGHT - tile_top - 2.2, tile_width, 2.2, fill=1, stroke=0)
+        _draw_centered_text(
+            canvas, str(value), top=193.6, font_name=FONT_BOLD, size=14,
+            color=foreground, center_x=x + tile_width / 2,
+        )
+        _draw_centered_text(
+            canvas, label, top=213.2, font_name=FONT_BOLD, size=14,
+            color=TEXT_MID, center_x=x + tile_width / 2,
+        )
+
+    # Zone index: three columns and four publication rows for the mission's 12 zones.
+    zone_x, zone_top, zone_width = 40.5, 264.0, 700.1
+    header_height, body_height = 26.9, 103.5
+    row_count = max((len(grouped_zones) + 2) // 3, 1)
+    row_height = body_height / row_count
+    canvas.setFillColor(_color(BANNER_GREEN))
+    canvas.rect(zone_x, PAGE_HEIGHT - zone_top - header_height, zone_width, header_height, fill=1, stroke=0)
+    _draw_centered_text(canvas, "ZONE INDEX", top=275.2, font_name=FONT_BOLD, size=14, color=colors.white)
+    cell_width = zone_width / 3
+    for index in range(row_count * 3):
+        row, column = divmod(index, 3)
+        cell_top = zone_top + header_height + row * row_height
+        cell_x = zone_x + column * cell_width
+        canvas.setFillColor(_color(PANEL_GRAY))
+        canvas.setStrokeColor(_color("DEDEDE"))
+        canvas.setLineWidth(0.35)
+        canvas.rect(cell_x, PAGE_HEIGHT - cell_top - row_height, cell_width, row_height, fill=1, stroke=1)
+        if index >= len(grouped_zones):
+            continue
+        zone, rows = grouped_zones[index]
+        baseline = PAGE_HEIGHT - (cell_top + row_height / 2 + 5.4)
+        _draw_segments(canvas, cell_x + 6.5, baseline, [
+            (f"{index + 1:02d}", FONT_BOLD, 14, GOLD_TEXT),
+            (f"  {_zone_label(zone)}", FONT_BOLD, 14, BANNER_GREEN),
+            (f"  ({len(rows)})", FONT_ITALIC, 14, MUTED_GRAY),
+        ])
+
+    # The publication details panel is intentionally tall and vertically centered.
+    panel_x, panel_top, panel_width, panel_height = 66.0, 402.3, 660.0, 108.2
+    panel_cell_width = panel_width / 3
+    for index in range(3):
+        x = panel_x + index * panel_cell_width
+        canvas.setFillColor(_color(PANEL_GRAY))
+        canvas.setStrokeColor(_color("DEDEDE"))
+        canvas.setLineWidth(0.35)
+        canvas.rect(x, PAGE_HEIGHT - panel_top - panel_height, panel_cell_width, panel_height, fill=1, stroke=1)
+    effective = transfer_title.upper().replace(" TRANSFER NEWS", " TRANSFER")
+    date_text = f"DOCUMENT DATE: {datetime.now():%d %B, %Y}."
+    panel_defs = [
+        ("PREPARED BY", prepared_by, "ASSISTANT TO THE PRESIDENT"),
+        ("APPROVED BY", president, f"{mission_name} PRESIDENT"),
+        ("EFFECTIVE", effective, date_text),
+    ]
+    for index, (label, value, note) in enumerate(panel_defs):
+        _draw_publication_cell(
+            canvas,
+            x=panel_x + index * panel_cell_width,
+            top=panel_top,
+            width=panel_cell_width,
+            height=panel_height,
+            label=label,
+            value=value,
+            note=note,
+        )
+
+    _draw_centered_text(
+        canvas, "STRICTLY CONFIDENTIAL - FOR MISSION USE ONLY", top=527.7,
+        font_name=FONT_ITALIC, size=14, color=MUTED_GRAY,
+    )
+    canvas.setFillColor(_color(ACCENT_GOLD))
+    canvas.rect(0, PAGE_HEIGHT - 569.2, PAGE_WIDTH, 18.7, fill=1, stroke=0)
+    canvas.setFillColor(_color(BANNER_GREEN))
+    canvas.rect(0, PAGE_HEIGHT - 587.8, PAGE_WIDTH, 18.6, fill=1, stroke=0)
     canvas.restoreState()
+
+
+def _cover_page(
+    mission_name: str,
+    transfer_title: str,
+    stats: dict[str, int],
+    grouped_zones: list[tuple[str, pd.DataFrame]],
+    president: str,
+    prepared_by: str,
+):
+    def draw(canvas, document) -> None:
+        _draw_reference_cover(
+            canvas, mission_name, transfer_title, stats, grouped_zones, president, prepared_by
+        )
+
+    return draw
 
 
 def _body_page(mission_name: str, transfer_title: str, president: str):
     def draw(canvas, document) -> None:
         canvas.saveState()
-        _draw_watermark(canvas, PAGE_HEIGHT / 2 - 4)
+        _draw_watermark(canvas, PAGE_HEIGHT - WATERMARK_ZONE_CENTER_Y_IN * inch)
 
         canvas.setFillColor(_color(BANNER_GREEN))
         canvas.rect(0.5 * inch, PAGE_HEIGHT - 0.43 * inch, PAGE_WIDTH - inch, 0.25 * inch, fill=1, stroke=0)
@@ -197,100 +469,15 @@ def _body_page(mission_name: str, transfer_title: str, president: str):
     return draw
 
 
-def _cover_story(
-    styles: dict[str, ParagraphStyle],
-    mission_name: str,
-    transfer_title: str,
-    stats: dict[str, int],
-    grouped_zones: list[tuple[str, pd.DataFrame]],
-    president: str,
-    prepared_by: str,
-) -> list:
-    story: list = []
-    mission = Table(
-        [[_p(mission_name.upper(), styles["cover_mission"])],
-         [_p("THE CHURCH OF JESUS CHRIST OF LATTER-DAY SAINTS", styles["cover_church"])]],
-        colWidths=[10 * inch],
-    )
-    mission.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _color(BANNER_GREEN)),
-        ("LINEBELOW", (0, -1), (-1, -1), 3, _color(ACCENT_GOLD)),
-        ("TOPPADDING", (0, 0), (-1, 0), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
-        ("TOPPADDING", (0, 1), (-1, 1), 2),
-        ("BOTTOMPADDING", (0, 1), (-1, 1), 4),
-    ]))
-    cover_title = escape(transfer_title.upper())
-    if cover_title.endswith(" - UPDATED ROSTER"):
-        cover_title = cover_title.removesuffix(" - UPDATED ROSTER") + "<br/><font size='15'>UPDATED ROSTER</font>"
-    story.extend([mission, Spacer(1, 0.18 * inch), _p(cover_title, styles["title"], markup=True)])
-    story.append(_p("Complete Zone-by-Zone Transfer Assignments - Mission Leadership Council", styles["subtitle"]))
-    story.append(Spacer(1, 0.16 * inch))
-
-    tiles = [
-        ("ZONES", stats.get("Zones", 0), GREEN_TINT, BANNER_GREEN),
-        ("MISSIONARIES", stats.get("Total Missionaries in Mission", 0), BLUE_TINT, BLUE),
-        ("LEADERSHIP ROLES", stats.get("Leadership Roles", 0), GOLD_TINT, GOLD_TEXT),
-        ("NEW MISSIONARIES", stats.get("New Missionaries", 0), NEW_MISSIONARY_FILL, NEW_MISSIONARY_TEXT),
-    ]
-    tile_data = [[
-        Paragraph(f"<font size='22'><b>{value}</b></font><br/><font size='6'>{escape(label)}</font>",
-                  ParagraphStyle(f"tile-{index}", fontName=FONT, alignment=TA_CENTER, textColor=_color(fg), leading=20))
-        for index, (label, value, _bg, fg) in enumerate(tiles)
-    ]]
-    tile_table = Table(tile_data, colWidths=[2.5 * inch] * 4, rowHeights=[0.75 * inch])
-    tile_commands = [("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("BOX", (0, 0), (-1, -1), 0.4, colors.lightgrey)]
-    for index, (_label, _value, bg, fg) in enumerate(tiles):
-        tile_commands.extend([
-            ("BACKGROUND", (index, 0), (index, 0), _color(bg)),
-            ("LINEABOVE", (index, 0), (index, 0), 3, _color(fg)),
-        ])
-    tile_table.setStyle(TableStyle(tile_commands))
-    story.extend([tile_table, Spacer(1, 0.15 * inch)])
-
-    zone_cells = []
-    for number, (zone, rows) in enumerate(grouped_zones, start=1):
-        zone_cells.append(_p(f"<b>{number:02d}</b>  {escape(zone.upper())} ZONE  ({len(rows)})", styles["small"], markup=True))
-    while len(zone_cells) % 3:
-        zone_cells.append("")
-    zone_data = [[_p("ZONE INDEX", styles["small_center"])] * 3]
-    zone_data += [zone_cells[index:index + 3] for index in range(0, len(zone_cells), 3)]
-    zone_table = Table(zone_data, colWidths=[10 * inch / 3] * 3)
-    zone_table.setStyle(TableStyle([
-        ("SPAN", (0, 0), (-1, 0)),
-        ("BACKGROUND", (0, 0), (-1, 0), _color(BANNER_GREEN)),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("BACKGROUND", (0, 1), (-1, -1), _color(PANEL_GRAY)),
-        ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]))
-    story.extend([zone_table, Spacer(1, 0.15 * inch)])
-
-    date_text = datetime.now().strftime("%d %B, %Y").upper()
-    panel_data = [[
-        _p(f"<font color='#{MUTED_GRAY}' size='6'>PREPARED BY</font><br/><b>{escape(prepared_by.upper())}</b>", styles["small"], markup=True),
-        _p(f"<font color='#{MUTED_GRAY}' size='6'>APPROVED BY</font><br/><b>{escape(president.upper())}</b>", styles["small"], markup=True),
-        _p(f"<font color='#{MUTED_GRAY}' size='6'>DOCUMENT DATE</font><br/><b>{date_text}</b>", styles["small"], markup=True),
-    ]]
-    panel = Table(panel_data, colWidths=[10 * inch / 3] * 3)
-    panel.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, -1), _color(PANEL_GRAY)),
-        ("GRID", (0, 0), (-1, -1), 0.3, colors.lightgrey),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-    ]))
-    story.extend([panel, Spacer(1, 0.08 * inch), _p("STRICTLY CONFIDENTIAL - FOR MISSION USE ONLY", styles["small_center"])])
-    return story
-
-
 def _zone_story(styles: dict[str, ParagraphStyle], number: int, zone: str, rows: pd.DataFrame) -> list:
+    zone_name = _zone_label(zone)
     divider = Table(
         [[_p(f"<font color='white'><b>{number:02d}</b></font>", styles["cell_center"], markup=True),
-          _p(f"<b>{escape(zone.upper())} ZONE</b>   -   {len(rows)} missionaries", styles["zone"], markup=True)]],
-        colWidths=[0.5 * inch, 9.5 * inch],
+          _p(
+              f"<b>{escape(zone_name)}</b>   <font color='#{MUTED_GRAY}'><i>-   {len(rows)} missionaries</i></font>",
+              styles["zone"], markup=True,
+          )]],
+        colWidths=[0.5 * inch, 9.361 * inch],
     )
     divider.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (0, 0), _color(BANNER_GREEN)),
@@ -300,8 +487,8 @@ def _zone_story(styles: dict[str, ParagraphStyle], number: int, zone: str, rows:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
     ]))
 
-    headers = ["#", "MISSIONARY", "ASSIGNMENT", "ZONE", "NEW/EXISTING AREA", "COMPANION(S)"]
-    data = [[_p(header, styles["cell_center"]) for header in headers]]
+    headers = ["#", "MISSIONARY", "ROLE", "ZONE", "AREA", "COMPANION(S)"]
+    data = [[_p(header, styles["cell_header"]) for header in headers]]
     for position, (_, row) in enumerate(rows.iterrows(), start=1):
         data.append([
             _p(position, styles["cell_center"]),
@@ -314,9 +501,10 @@ def _zone_story(styles: dict[str, ParagraphStyle], number: int, zone: str, rows:
 
     table = Table(
         data,
-        colWidths=[0.35 * inch, 1.45 * inch, 0.82 * inch, 1.15 * inch, 2.2 * inch, 4.03 * inch],
+        colWidths=[0.306 * inch, 1.563 * inch, 0.764 * inch, 1.25 * inch, 2.431 * inch, 3.547 * inch],
         repeatRows=1,
         hAlign="LEFT",
+        splitByRow=1,
     )
     commands = [
         ("BACKGROUND", (0, 0), (-1, 0), _color(BANNER_GREEN)),
@@ -324,10 +512,12 @@ def _zone_story(styles: dict[str, ParagraphStyle], number: int, zone: str, rows:
         ("FONTNAME", (0, 0), (-1, 0), FONT_BOLD),
         ("GRID", (0, 0), (-1, -1), 0.35, _color("E0E0E0")),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (0, -1), 2),
+        ("RIGHTPADDING", (0, 0), (0, -1), 2),
     ]
     for table_row, (_, row) in enumerate(rows.iterrows(), start=1):
         if table_row % 2 == 0:
@@ -355,11 +545,15 @@ def _assignment_key(styles: dict[str, ParagraphStyle]) -> list:
         if code == "+":
             bg, fg = NEW_MISSIONARY_FILL, NEW_MISSIONARY_TEXT
         cells.append((_p(f"<font color='#{fg}'><b>{escape(code)}</b></font>  {escape(label.title())}", styles["cell"], markup=True), bg))
-    while len(cells) % 5:
+    key_columns = 6
+    while len(cells) % key_columns:
         cells.append(("", PANEL_GRAY))
-    data = [[_p("ASSIGNMENT KEY", styles["cell_center"])] * 5]
-    data += [[cell[0] for cell in cells[index:index + 5]] for index in range(0, len(cells), 5)]
-    table = Table(data, colWidths=[2 * inch] * 5)
+    data = [[_p("ASSIGNMENT KEY", styles["cell_header"])] * key_columns]
+    data += [
+        [cell[0] for cell in cells[index:index + key_columns]]
+        for index in range(0, len(cells), key_columns)
+    ]
+    table = Table(data, colWidths=[9.861 * inch / key_columns] * key_columns)
     commands = [
         ("SPAN", (0, 0), (-1, 0)),
         ("BACKGROUND", (0, 0), (-1, 0), _color(BANNER_GREEN)),
@@ -370,7 +564,7 @@ def _assignment_key(styles: dict[str, ParagraphStyle]) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
     ]
     for index, (_content, bg) in enumerate(cells):
-        row, col = divmod(index, 5)
+        row, col = divmod(index, key_columns)
         commands.append(("BACKGROUND", (col, row + 1), (col, row + 1), _color(bg)))
     table.setStyle(TableStyle(commands))
     return [Spacer(1, 0.12 * inch), table]
@@ -415,12 +609,13 @@ def build_transfer_pdf(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     document = SimpleDocTemplate(
         str(output_path), pagesize=landscape(letter),
-        leftMargin=0.5 * inch, rightMargin=0.5 * inch,
+        leftMargin=0.44 * inch, rightMargin=0.44 * inch,
         topMargin=0.55 * inch, bottomMargin=0.55 * inch,
         title=title, author=mission_name,
     )
-    story = _cover_story(styles, mission_name, title, stats, grouped, president, prepared_by)
-    story.append(PageBreak())
+    # The first page is drawn directly on the canvas so its measured bands,
+    # tables, watermark, and publication panel remain stable on every host.
+    story = [PageBreak()]
     for number, (zone, rows) in enumerate(grouped, start=1):
         if number > 1:
             story.append(PageBreak())
@@ -429,7 +624,7 @@ def build_transfer_pdf(
     story.extend(_assignment_key(styles))
     document.build(
         story,
-        onFirstPage=_first_page,
+        onFirstPage=_cover_page(mission_name, title, stats, grouped, president, prepared_by),
         onLaterPages=_body_page(mission_name, title, president),
     )
     return output_path

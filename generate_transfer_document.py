@@ -10,8 +10,8 @@ import pandas as pd
 from docx import Document
 from docx.table import Table
 from docx.enum.section import WD_ORIENT, WD_SECTION_START
-from docx.enum.table import WD_ALIGN_VERTICAL
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.table import WD_ALIGN_VERTICAL, WD_TABLE_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt, RGBColor
@@ -800,15 +800,21 @@ def build_statistics_docx(workbook_path: Path, output_path: Path) -> Path:
         return fallback_path
 
 
-def set_section_margins(section, top: float = 0.7, bottom: float = 0.65) -> None:
+def set_section_margins(
+    section,
+    top: float = 0.7,
+    bottom: float = 0.65,
+    left: float = 0.5,
+    right: float = 0.5,
+) -> None:
     """Landscape layout matching the printed Transfer News."""
     section.orientation = WD_ORIENT.LANDSCAPE
     if section.page_height > section.page_width:
         section.page_width, section.page_height = section.page_height, section.page_width
     section.top_margin = Inches(top)
     section.bottom_margin = Inches(bottom)
-    section.left_margin = Inches(0.5)
-    section.right_margin = Inches(0.5)
+    section.left_margin = Inches(left)
+    section.right_margin = Inches(right)
     section.header_distance = Inches(0.3)
     section.footer_distance = Inches(0.3)
 
@@ -909,6 +915,55 @@ def _gap(document: Document, points: float = 4) -> None:
     para.paragraph_format.space_before = Pt(0)
     para.paragraph_format.space_after = Pt(points)
     para.add_run("").font.size = Pt(2)
+
+
+def _cover_gap(document: Document, points: float) -> None:
+    """An exact-height spacer used by the measured cover layout."""
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    paragraph.paragraph_format.line_spacing = Pt(points)
+    run = paragraph.add_run(" ")
+    run.font.size = Pt(1)
+    run.font.color.rgb = RGBColor.from_string("FFFFFF")
+
+
+def _set_cover_line(paragraph, height_points: float = 18.6) -> None:
+    paragraph.paragraph_format.space_before = Pt(0)
+    paragraph.paragraph_format.space_after = Pt(0)
+    paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    paragraph.paragraph_format.line_spacing = Pt(height_points)
+
+
+def _cover_band(document: Document, fill: str, height_points: float) -> None:
+    paragraph = document.add_paragraph()
+    _set_cover_line(paragraph, height_points)
+    set_paragraph_shading(paragraph, fill)
+    run = paragraph.add_run(" ")
+    run.font.size = Pt(1)
+    run.font.color.rgb = RGBColor.from_string(fill)
+
+
+def _set_row_height(row, points: float, rule: str = "atLeast") -> None:
+    tr_pr = row._tr.get_or_add_trPr()
+    height = tr_pr.find(qn("w:trHeight"))
+    if height is None:
+        height = OxmlElement("w:trHeight")
+        tr_pr.append(height)
+    height.set(qn("w:val"), str(round(points * 20)))
+    height.set(qn("w:hRule"), rule)
+
+
+def _center_cover_table(table) -> None:
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    tbl_pr = table._tbl.tblPr
+    indent = tbl_pr.find(qn("w:tblInd"))
+    if indent is None:
+        indent = OxmlElement("w:tblInd")
+        tbl_pr.append(indent)
+    indent.set(qn("w:w"), "0")
+    indent.set(qn("w:type"), "dxa")
 
 
 def _set_cell_edge(cell, edge: str, color: str, size: int = 4, style: str = "single") -> None:
@@ -1147,77 +1202,93 @@ def build_cover_page(
     president: str = DEFAULT_PRESIDENT,
     prepared_by: str = DEFAULT_PREPARED_BY,
 ) -> None:
+    # Named design override: measured publication cover from the supplied
+    # Nigeria Uyo Mission PDF. All vertical dimensions below are points from
+    # the top of its 11 x 8.5 inch landscape page.
+    _cover_gap(document, 70.8)
+
     banner = document.add_paragraph()
     banner.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_cover_line(banner)
     run = banner.add_run(mission_name.upper())
     run.bold = True
     run.font.name = FONT_NAME
-    run.font.size = Pt(26)
+    run.font.size = Pt(14)
     run.font.color.rgb = RGBColor.from_string(ACCENT_GOLD)
     _set_char_spacing(run, 60)
     set_paragraph_shading(banner, BANNER_GREEN)
 
+    _cover_gap(document, 2.0)
+
     subtitle = document.add_paragraph()
     subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_cover_line(subtitle)
     run = subtitle.add_run("THE CHURCH OF JESUS CHRIST OF LATTER-DAY SAINTS")
     run.font.name = FONT_NAME
-    run.font.size = Pt(8)
+    run.font.size = Pt(14)
     run.font.color.rgb = RGBColor.from_string("FFFFFF")
     _set_char_spacing(run, 20)
     set_paragraph_shading(subtitle, BANNER_GREEN)
-    set_paragraph_bottom_border(subtitle, ACCENT_GOLD, size=18)
+    _cover_band(document, ACCENT_GOLD, 2.2)
 
-    _gap(document, 3)
+    _cover_gap(document, 20.8)
 
     title = document.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_cover_line(title)
     run = title.add_run(transfer_title.upper())
     run.bold = True
     run.font.name = FONT_NAME
-    run.font.size = Pt(29)
+    run.font.size = Pt(14)
     run.font.color.rgb = RGBColor.from_string(BANNER_GREEN)
     _set_char_spacing(run, 20)
-
-    subtitle2 = document.add_paragraph()
-    subtitle2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run = subtitle2.add_run("Complete Zone-by-Zone Transfer Assignments  ·  Mission Leadership Council")
-    run.italic = True
-    run.font.name = FONT_NAME
-    run.font.size = Pt(8.5)
-    run.font.color.rgb = RGBColor.from_string(MUTED_GRAY)
     add_watermark(
-        subtitle2, WATERMARK_SIZE_IN,
+        title, WATERMARK_SIZE_IN,
         WATERMARK_COVER_CENTER_X_IN, WATERMARK_COVER_CENTER_Y_IN,
     )
 
-    _gap(document, 3)
+    subtitle2 = document.add_paragraph()
+    subtitle2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _set_cover_line(subtitle2)
+    run = subtitle2.add_run("Complete Zone-by-Zone Transfer Assignments  ·  Mission Leadership Council")
+    run.italic = True
+    run.font.name = FONT_NAME
+    run.font.size = Pt(14)
+    run.font.color.rgb = RGBColor.from_string(MUTED_GRAY)
 
-    # Stat cards (statCard in the design source): thick accent top border,
-    # tinted background, big accent number, small caps label.
+    _cover_gap(document, 13.2)
+
+    # Single-row statistic strip, matching the compact reference cards.
     tile_defs = [
         ("ZONES", stats.get("Zones", 0), GREEN_TINT, BANNER_GREEN),
         ("MISSIONARIES", stats.get("Total Missionaries in Mission", 0), BLUE_TINT, BLUE),
         ("LEADERSHIP ROLES", stats.get("Leadership Roles", 0), GOLD_TINT, GOLD_TEXT),
         ("NEW MISSIONARIES", stats.get("New Missionaries", 0), NEW_MISSIONARY_FILL, NEW_MISSIONARY_TEXT),
     ]
-    tile_table = document.add_table(rows=2, cols=len(tile_defs))
+    tile_table = document.add_table(rows=1, cols=len(tile_defs))
     set_table_borders(tile_table, color="DDDDDD", size=4)
     for index, (label, value, bg, fg) in enumerate(tile_defs):
-        number_cell = tile_table.rows[0].cells[index]
-        set_cell_shading(number_cell, bg)
-        set_cell_text(number_cell, str(value), bold=True, size=26)
-        style_cell_runs(number_cell, color=fg)
-        _set_cell_top_border(number_cell, fg, size=20)
-        label_cell = tile_table.rows[1].cells[index]
-        set_cell_shading(label_cell, bg)
-        set_cell_text(label_cell, label, bold=True, size=6.5)
-        style_cell_runs(label_cell, color=TEXT_MID)
-    _set_fixed_table(tile_table, [3300] * 4, margins=(30, 100))
+        cell = tile_table.rows[0].cells[index]
+        cell.text = ""
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+        set_cell_shading(cell, bg)
+        _set_cell_top_border(cell, fg, size=18)
+        number_para = cell.paragraphs[0]
+        number_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_cover_line(number_para)
+        _small_run(number_para, str(value), fg, bold=True, size=14)
+        label_para = cell.add_paragraph()
+        label_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        _set_cover_line(label_para)
+        _small_run(label_para, label, TEXT_MID, bold=True, size=14)
+    _set_fixed_table(tile_table, [3300] * 4, margins=(60, 100))
+    _center_cover_table(tile_table)
+    _set_row_height(tile_table.rows[0], 44.5, rule="exact")
 
-    _gap(document, 3)
+    _cover_gap(document, 36.1)
 
-    # ZONE INDEX table with the merged green header row (buildZoneIndex in
-    # the design source).
+    # Zone index: exact 700 pt width, three columns, and four 25.9 pt rows
+    # for the mission's normal 12-zone publication.
     cols = 3
     index_widths = [4666, 4667, 4667]
     row_count = max((len(zone_rows) + cols - 1) // cols, 1)
@@ -1226,27 +1297,37 @@ def build_cover_page(
 
     header_cell = zone_table.rows[0].cells[0]
     header_cell = header_cell.merge(zone_table.rows[0].cells[1]).merge(zone_table.rows[0].cells[2])
+    header_cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
     set_cell_shading(header_cell, BANNER_GREEN)
-    set_cell_text(header_cell, "ZONE INDEX", bold=True, size=7.5)
+    set_cell_text(header_cell, "ZONE INDEX", bold=True, size=14)
     style_cell_runs(header_cell, color="FFFFFF")
+    _set_cover_line(header_cell.paragraphs[0])
+    _set_row_height(zone_table.rows[0], 26.9, rule="exact")
 
     for i in range(row_count * cols):
         r, c = divmod(i, cols)
         cell = zone_table.rows[r + 1].cells[c]
         cell.text = ""
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         set_cell_shading(cell, PANEL_GRAY)
+        _set_cover_line(cell.paragraphs[0])
         if i < len(zone_rows):
             number, name, count = zone_rows[i]
+            zone_name = str(name).upper()
+            if not zone_name.endswith(" ZONE"):
+                zone_name = f"{zone_name} ZONE"
             para = cell.paragraphs[0]
-            _small_run(para, f"{number:02d}", GOLD_TEXT, bold=True, size=7)
-            _small_run(para, f"  {name.upper()} ZONE", BANNER_GREEN, bold=True, size=7)
-            _small_run(para, f"  ({count})", MUTED_GRAY, italic=True, size=6.5)
-    _set_fixed_table(zone_table, index_widths, margins=(50, 130))
+            _small_run(para, f"{number:02d}", GOLD_TEXT, bold=True, size=14)
+            _small_run(para, f"  {zone_name}", BANNER_GREEN, bold=True, size=14)
+            _small_run(para, f"  ({count})", MUTED_GRAY, italic=True, size=14)
+        _set_row_height(zone_table.rows[r + 1], 103.5 / row_count, rule="exact")
+    _set_fixed_table(zone_table, index_widths, margins=(40, 130))
+    _center_cover_table(zone_table)
 
-    _gap(document, 3)
+    _cover_gap(document, 7.9)
 
-    # PREPARED BY / APPROVED BY / EFFECTIVE panel
-    effective_date = f"{datetime.now():%d %B, %Y}".upper()
+    # Tall, vertically centered publication details panel.
+    effective_date = f"{datetime.now():%d %B, %Y}.".upper()
     panel_defs = [
         ("PREPARED BY", prepared_by.upper(), DEFAULT_PREPARED_ROLE),
         ("APPROVED BY", president.upper(), f"{mission_name.upper()} PRESIDENT"),
@@ -1255,31 +1336,33 @@ def build_cover_page(
     panel = document.add_table(rows=1, cols=len(panel_defs))
     for index, (label, value, note) in enumerate(panel_defs):
         cell = panel.rows[0].cells[index]
+        cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
         set_cell_shading(cell, PANEL_GRAY)
         cell.text = ""
         p1 = cell.paragraphs[0]
-        _small_run(p1, label, MUTED_GRAY, bold=True, size=6)
+        _set_cover_line(p1)
+        _small_run(p1, label, MUTED_GRAY, bold=True, size=14)
         p2 = cell.add_paragraph()
-        _small_run(p2, value, BANNER_GREEN, bold=True, size=8.5)
+        _set_cover_line(p2)
+        _small_run(p2, value, BANNER_GREEN, bold=True, size=14)
         p3 = cell.add_paragraph()
-        _small_run(p3, note, MUTED_GRAY, italic=True, size=6.5)
-    _set_fixed_table(panel, [4400, 4400, 4400], margins=(70, 160))
+        _set_cover_line(p3)
+        _small_run(p3, note, MUTED_GRAY, italic=True, size=14)
+    set_table_borders(panel, color="DEDEDE", size=3)
+    _set_fixed_table(panel, [4400, 4400, 4400], margins=(130, 160))
+    _center_cover_table(panel)
+    _set_row_height(panel.rows[0], 108.2, rule="exact")
+
+    _cover_gap(document, 14.9)
 
     confidential = document.add_paragraph()
     confidential.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    confidential.paragraph_format.space_before = Pt(2)
-    confidential.paragraph_format.space_after = Pt(2)
-    _small_run(confidential, "STRICTLY CONFIDENTIAL — FOR MISSION USE ONLY", MUTED_GRAY, italic=True, size=6.5)
+    _set_cover_line(confidential)
+    _small_run(confidential, "STRICTLY CONFIDENTIAL - FOR MISSION USE ONLY", MUTED_GRAY, italic=True, size=14)
 
-    # Closing gold + green bars at the foot of the cover (design source):
-    # a single line — gold fill with a thick green rule beneath it.
-    bar = document.add_paragraph()
-    set_paragraph_shading(bar, ACCENT_GOLD)
-    set_paragraph_bottom_border(bar, BANNER_GREEN, size=28)
-    bar.paragraph_format.space_before = Pt(0)
-    bar.paragraph_format.space_after = Pt(0)
-    bar_run = bar.add_run(" ")
-    bar_run.font.size = Pt(3)
+    _cover_gap(document, 6.5)
+    _cover_band(document, ACCENT_GOLD, 18.7)
+    _cover_band(document, BANNER_GREEN, 18.6)
 
 
 def build_assignment_key_page(document: Document) -> None:
@@ -1425,10 +1508,9 @@ def build_transfer_docx(
     if roster_mode:
         resolved_title = f"{resolved_title} — UPDATED ROSTER"
 
-    # Like the design source, the cover lives in its own section: tighter
-    # margins and no running header/footer; the zone pages follow in a second
-    # section that carries them.
-    set_section_margins(document.sections[0], top=0.4, bottom=0.35)
+    # The reference cover is full-bleed and positions its content from the
+    # physical page edges; the body retains the normal half-inch margins.
+    set_section_margins(document.sections[0], top=0, bottom=0, left=0, right=0)
     build_cover_page(document, mission_name, resolved_title, stats, zone_rows, president, prepared_by)
     body_section = document.add_section(WD_SECTION_START.NEW_PAGE)
     # The paragraph carrying the section break still occupies a line on the

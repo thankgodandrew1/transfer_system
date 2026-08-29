@@ -17,7 +17,9 @@ services:
       - key: REQUIRE_ACCESS_KEY
         value: 1
       - key: GITHUB_URL
-        sync: false
+        value: https://github.com/thankgodandrew1/transfer_system
+      - key: CREATOR_NAME
+        value: ThankGod Andrew
       - key: JOB_TTL_MINUTES
         value: 60
       - key: MAX_FILE_MB
