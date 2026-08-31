@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Movement result · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="result-hero {{ job.status }}">
+  <div class="shell narrow">
+    {% if job.status == 'complete' %}
+      <p class="eyebrow">Movement plan complete</p><h1>Your Transfer Movement package is ready.</h1><p>Download the Word plan for publication and the CSV table for office review and status updates.</p>
+    {% else %}
+      <p class="eyebrow">Correction required</p><h1>The comparison stopped safely.</h1><p>{{ job.error or 'The movement plan could not be generated.' }}</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="result-section"><div class="shell narrow">
+  {% if job.status == 'complete' %}
+    <div class="summary-grid">
+      <div><strong>{{ job.summary.movements }}</strong><span>Apartment movements</span></div>
+      <div><strong>{{ job.summary.zones }}</strong><span>Previous zones</span></div>
+      <div><strong>{{ job.summary.new_arrivals }}</strong><span>New arrivals skipped</span></div>
+      <div><strong>{{ job.summary.released }}</strong><span>Released skipped</span></div>
+    </div>
+    <div class="result-grid">
+      <div class="download-panel">
+        <div class="panel-heading"><div><p class="eyebrow">Downloads</p><h2>Generated files</h2></div><span>Expires {{ job.expires_at[:16].replace('T', ' ') }} UTC</span></div>
+        <div class="download-list">
+          {% for file in job.files %}
+          <a class="download-row {% if file.kind == 'zip' %}featured{% endif %}" href="{{ url_for('download', job_id=job.job_id, filename=file.name) }}">
+            <span class="file-kind">{{ file.kind|upper }}</span><span><strong>{{ file.label }}</strong><small>{{ (file.size / 1024)|round(1) }} KB</small></span><span class="download-arrow" aria-hidden="true">↓</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      <aside class="review-panel">
+        <p class="eyebrow">Comparison audit</p><h2>What was included</h2>
+        <ul class="review-list"><li><span>Names present in both cycles</span><strong>{{ job.summary.matched }}</strong></li><li><span>Same-apartment assignments</span><strong>{{ job.summary.unchanged }}</strong></li><li><span>Manual overrides</span><strong>{{ job.summary.manual_overrides }}</strong></li><li><span>Parser warnings</span><strong>{{ job.warnings|length }}</strong></li></ul>
+        {% if job.warnings %}<details><summary>Read parser notes</summary><ol>{% for warning in job.warnings %}<li>{{ warning }}</li>{% endfor %}</ol></details>{% else %}<div class="success-note">Every named assignment was compared without parser warnings.</div>{% endif %}
+      </aside>
+    </div>
+  {% endif %}
+  <div class="result-actions"><a class="button primary" href="{{ url_for('movement') }}">Generate another movement plan</a><a class="button secondary" href="{{ url_for('index') }}">Return to Transfer News</a></div>
+</div></section>
+{% endblock %}

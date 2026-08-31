@@ -1,23 +1,22 @@
 WEBVTT
 
-00:00.000 --> 00:07.000
-Welcome to Transfer News Generator. One verified web run creates every essential output.
+00:00.000 --> 00:08.000
+Welcome to the Nigeria Uyo Mission Transfer System, developed by ThankGod Andrew. One verified web run creates every essential output.
 
-00:07.000 --> 00:14.000
+00:08.000 --> 00:16.000
 Upload the current Transfer Management PDF, previous Transfer News PDF, current roster report, and previous roster report.
 
-00:14.000 --> 00:21.000
+00:16.000 --> 00:24.000
 Confirm the mission, president, preparer, and detected transfer title. Override the title only when necessary.
 
-00:21.000 --> 00:28.000
+00:24.000 --> 00:32.000
 Keep the updated roster and statistics selected. A Word template and corrections CSV are optional.
 
-00:28.000 --> 00:35.000
+00:32.000 --> 00:40.000
 Generate the package and keep the tab open while validation, matching, verification, rendering, and ZIP creation finish.
 
-00:35.000 --> 00:42.000
+00:40.000 --> 00:48.000
 Download the ZIP and inspect Verification, Changes, notes, and warnings before publishing. Resolve any blocking row first.
 
-00:42.000 --> 00:49.000
+00:48.000 --> 00:56.000
 Download promptly, protect confidential records, and never commit real transfer files to GitHub.
-

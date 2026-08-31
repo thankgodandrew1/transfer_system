@@ -1,32 +1,42 @@
 # Transfer News Generator — presenter script
 
-This script follows the 49-second captioned video on the **How to use** page. The video contains sanitized examples only.
+This script follows the 56-second narrated and captioned video on the **How to use** page. The video contains sanitized examples only.
 
-## 0:00–0:07 — Welcome
+## 0:00–0:08 — Welcome
 
-“This is Transfer News Generator. It converts the four transfer records into a verified Word, PDF, workbook, CSV, updated roster, statistics summary, and ZIP package.”
+“Welcome to the Nigeria Uyo Mission Transfer System, developed by ThankGod Andrew. One verified web run creates every essential output.”
 
-## 0:07–0:14 — Uploads
+## 0:08–0:16 — Uploads
 
-“Start with the current Transfer Management PDF, the previous Transfer News PDF, and the current and previous roster reports in Excel. All four are required for fully verified output.”
+“Upload the current Transfer Management PDF, previous Transfer News PDF, current roster report, and previous roster report.”
 
-## 0:14–0:21 — Publication details
+## 0:16–0:24 — Publication details
 
-“Check the mission name, president, preparer, and detected transfer title. Leave the title blank to use automatic detection, or enter an override when needed.”
+“Confirm the mission, president, preparer, and detected transfer title. Override the title only when necessary.”
 
-## 0:21–0:28 — Optional controls
+## 0:24–0:32 — Optional controls
 
-“Keep the updated roster and statistics selected for the complete package. Use a Word template or manual-corrections CSV only for an approved exception.”
+“Keep the updated roster and statistics selected. A Word template and corrections CSV are optional.”
 
-## 0:28–0:35 — Generate
+## 0:32–0:40 — Generate
 
-“Select Generate Transfer News and keep the tab open. The service validates uploads, matches assignments, verifies against both reports, renders the documents, and builds the ZIP.”
+“Generate the package and keep the tab open while validation, matching, verification, rendering, and ZIP creation finish.”
 
-## 0:35–0:42 — Review
+## 0:40–0:48 — Review
 
-“Download the ZIP, then inspect the Verification and Changes sheets plus any notes or parser warnings. If the page says publication is paused, resolve every BLOCKING row and run it again.”
+“Download the ZIP and inspect Verification, Changes, notes, and warnings before publishing. Resolve any blocking row first.”
 
-## 0:42–0:49 — Privacy
+## 0:48–0:56 — Privacy
 
-“Download the files before they expire. Protect the real transfer records, use the shared access key on public hosting, and never add confidential inputs or generated outputs to GitHub.”
+“Download promptly, protect confidential records, and never commit real transfer files to GitHub.”
 
+## Supplemental movement-plan walkthrough
+
+Use this after the Transfer News video when training mission-office staff:
+
+1. Open **Movement plan** in the main navigation.
+2. Upload the previous and current Transfer News PDFs. If either table cannot be parsed, paste its `Missionary | Zone | Area` text in the fallback panel.
+3. Upload the area-to-apartment directory. CSV or XLSX is recommended because staff can maintain it in Excel; JSON and the legacy Word document are also supported.
+4. Add only confirmed historical exceptions in the format `Elder Twum: Anua Obio -> Mbierebe`.
+5. Generate the plan and verify the comparison audit. New arrivals and released missionaries are skipped automatically; every movement is grouped under the previous zone.
+6. Download the Word plan, review CSV, and editable apartment-directory CSV. The STATUS cells remain blank so drivers can tick them after each successful movement.

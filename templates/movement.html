@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Transfer Movement · {{ app_name }}{% endblock %}
+{% block content %}
+<section class="movement-hero">
+  <div class="shell hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">The next mission-office step</p>
+      <h1>Turn two Transfer News files into a complete movement plan.</h1>
+      <p class="hero-lede">The system matches missionaries, translates areas into apartments, records apartment changes, groups them by the zone they move from, and produces a downloadable Word plan with status tracking.</p>
+      <div class="hero-actions"><a class="button primary" href="#movement-generator">Build a movement plan</a><a class="button secondary" href="{{ url_for('apartment_directory_template') }}">Download directory template</a></div>
+      <div class="privacy-note"><span aria-hidden="true">●</span><div><strong>New and released missionaries are skipped automatically</strong><br>Only missionaries named in both Transfer News files are compared.</div></div>
+    </div>
+    <aside class="movement-preview" aria-label="Transfer Movement document preview">
+      <div class="movement-preview-masthead">NIGERIA UYO MISSION</div>
+      <p>TRANSFER MOVEMENT</p>
+      <strong>ZONE-BY-ZONE LISTING</strong>
+      <div class="movement-preview-zone">01 &nbsp; PREVIOUS ZONE <span>3 MOVEMENTS</span></div>
+      <div class="movement-preview-table"><b>#</b><b>MISSIONARY</b><b>FROM</b><b>TO</b><b>STATUS</b><span>1</span><span>Elder Sample</span><span>Old Apt.</span><span>New Apt.</span><span>&nbsp;</span></div>
+      <small>Word document · five-column movement table</small>
+    </aside>
+  </div>
+</section>
+
+<section id="movement-generator" class="generator-section">
+  <div class="shell">
+    <div class="section-heading"><div><p class="eyebrow">Movement workspace</p><h2>Compare assignments and apartments</h2></div><p>Upload the two Transfer News PDFs and the office apartment directory. If a PDF cannot be read, paste its table in the fallback section.</p></div>
+    <form id="movement-form" data-generation-form data-processing-kind="movement" class="generator-form" action="{{ url_for('generate_movement') }}" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+      <div class="step-card">
+        <div class="step-number">01</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Transfer News records</h3><span>PDF or text</span></div>
+          <div class="upload-grid">
+            <label class="upload-field"><input type="file" name="movement_previous_pdf" accept="application/pdf,.pdf"><span class="upload-icon">OLD</span><strong>Previous Transfer News</strong><small>The cycle missionaries are moving from</small><em data-file-label>Choose PDF</em></label>
+            <label class="upload-field"><input type="file" name="movement_current_pdf" accept="application/pdf,.pdf"><span class="upload-icon">NEW</span><strong>Current Transfer News</strong><small>The newly generated transfer cycle</small><em data-file-label>Choose PDF</em></label>
+          </div>
+          <details class="fallback-panel">
+            <summary>PDF parsing fallback: paste Transfer News text</summary>
+            <p>Use this only when a PDF is scanned or its table cannot be read. A copied table with <strong>Missionary, Zone, Area</strong> columns works best.</p>
+            <div class="textarea-grid">
+              <label><span>Previous Transfer News text</span><textarea name="previous_transfer_text" rows="8" placeholder="Missionary | Zone | Area&#10;Elder Example | Uyo Zone | Oron Road East"></textarea></label>
+              <label><span>Current Transfer News text</span><textarea name="current_transfer_text" rows="8" placeholder="Missionary | Zone | Area&#10;Elder Example | Uyo Central Zone | Uyo City"></textarea></label>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">02</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Apartment directory</h3><span>Required</span></div>
+          <div class="directory-layout">
+            <label class="upload-field directory-upload"><input type="file" name="apartment_directory" accept=".csv,.xlsx,.json,.docx,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.openxmlformats-officedocument.wordprocessingml.document" required><span class="upload-icon">APT</span><strong>Area-to-apartment directory</strong><small>CSV or XLSX recommended; existing JSON and Word files are supported</small><em data-file-label>Choose directory</em></label>
+            <div class="directory-help"><strong>No coding is needed.</strong><p>Download the CSV template, open it in Excel, and keep one row for every area. The finished run also returns your uploaded directory as an editable CSV for the next cycle.</p><a href="{{ url_for('apartment_directory_template') }}">Download CSV template ↓</a></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">03</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Publication details</h3><span>Review</span></div>
+          <div class="field-grid">
+            <label><span>Mission name</span><input type="text" name="mission_name" value="{{ defaults.mission_name }}" maxlength="120" required></label>
+            <label><span>Mission president</span><input type="text" name="president" value="{{ defaults.president }}" maxlength="120" required></label>
+            <label><span>Prepared by</span><input type="text" name="prepared_by" value="{{ defaults.prepared_by }}" maxlength="160" required></label>
+            <label><span>Effective date</span><input type="date" name="effective_date" value="{{ defaults.effective_date }}"></label>
+            <label><span>Previous cycle title <small>optional</small></span><input type="text" name="previous_title" maxlength="120" placeholder="Detected from the previous PDF"></label>
+            <label><span>Current cycle title <small>optional</small></span><input type="text" name="current_title" maxlength="120" placeholder="Detected from the current PDF"></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-card">
+        <div class="step-number">04</div>
+        <div class="step-content">
+          <div class="step-heading"><h3>Manual movement exceptions</h3><span>Optional</span></div>
+          <label class="full-textarea"><span>One exception per line</span><textarea name="manual_overrides" rows="6" placeholder="Elder Twum: Anua Obio -> Mbierebe"></textarea><small>Format: <strong>Name: FROM apartment -&gt; TO apartment</strong>. Status cells are deliberately left empty for drivers to tick after each successful movement.</small></label>
+        </div>
+      </div>
+
+      <div class="submit-bar">
+        <div><strong>Ready to compare?</strong><span>Missing apartment mappings stop the run with an exact correction list; no movement is silently omitted.</span></div>
+        <button class="button primary large" type="submit"><span>Generate Movement Plan</span><span aria-hidden="true">→</span></button>
+      </div>
+    </form>
+  </div>
+</section>
+
+<div id="processing-overlay" class="processing-overlay" hidden role="status" aria-live="polite">
+  <div class="processing-card"><div class="spinner" aria-hidden="true"></div><p class="eyebrow">Secure comparison in progress</p><h2>Building the movement plan</h2><p id="processing-message">Reading both Transfer News files…</p><div class="progress-track"><span></span></div><small>Keep this tab open. Uploaded files remain in an isolated temporary workspace.</small></div>
+</div>
+{% endblock %}

@@ -1,15 +1,24 @@
 {% extends "base.html" %}
 {% block title %}How to use · {{ app_name }}{% endblock %}
 {% block content %}
-<section class="guide-hero"><div class="shell narrow"><p class="eyebrow">User walkthrough</p><h1>From iMOS export to finished Transfer News.</h1><p>Follow the five steps below. Use sanitized sample files when demonstrating the system publicly.</p></div></section>
+<section class="guide-hero"><div class="shell narrow"><p class="eyebrow">User walkthrough</p><h1>From iMOS export to Transfer News and movement plan.</h1><p>Generate the verified news first, then compare it with the previous cycle to prepare driver movements. Use sanitized sample files when demonstrating the system publicly.</p></div></section>
 <section class="guide-section"><div class="shell narrow">
-  <div class="video-frame"><video controls preload="metadata" poster="{{ url_for('static', filename='video-poster.png') }}"><source src="{{ url_for('static', filename='walkthrough.mp4') }}" type="video/mp4"><track kind="captions" src="{{ url_for('static', filename='walkthrough.vtt') }}" srclang="en" label="English" default>Your browser cannot play the video. Use the written steps below.</video></div>
+  <div class="video-frame"><video controls preload="metadata" poster="{{ url_for('static', filename='video-poster.png') }}" aria-label="Narrated English walkthrough for the Transfer News Generator"><source src="{{ url_for('static', filename='walkthrough.mp4') }}" type="video/mp4"><track kind="captions" src="{{ url_for('static', filename='walkthrough.vtt') }}" srclang="en" label="English" default>Your browser cannot play the video. Use the written steps below.</video></div>
+  <div class="guide-subheading"><p class="eyebrow">Workflow one</p><h2>Generate Transfer News</h2></div>
   <ol class="guide-steps">
     <li><span>01</span><div><h2>Export the four records</h2><p>Prepare the current Transfer Management PDF, previous Transfer News PDF, current roster report, and previous roster report.</p></div></li>
     <li><span>02</span><div><h2>Upload and confirm details</h2><p>Select each file, verify the mission and leadership names, and override the title only when automatic detection is unsuitable.</p></div></li>
     <li><span>03</span><div><h2>Generate securely</h2><p>Keep the browser tab open while the system parses, matches, verifies, and renders the package.</p></div></li>
     <li><span>04</span><div><h2>Review corrections and warnings</h2><p>Open the workbook, inspect the Verification and Changes sheets, and read any warnings on the results page.</p></div></li>
     <li><span>05</span><div><h2>Download and continue the cycle</h2><p>Download the ZIP. Keep the updated-roster PDF because it becomes the previous Transfer News input next cycle.</p></div></li>
+  </ol>
+  <div class="guide-subheading movement-guide-heading"><p class="eyebrow">Workflow two</p><h2>Generate the Transfer Movement plan</h2><p>Open <a href="{{ url_for('movement') }}">Movement plan</a> after the current Transfer News has been approved.</p></div>
+  <ol class="guide-steps">
+    <li><span>01</span><div><h2>Upload the two Transfer News files</h2><p>Use the previous cycle as the FROM record and the newly approved Transfer News as the current record. Paste a Missionary, Zone, Area table in the fallback panel only if a PDF cannot be parsed.</p></div></li>
+    <li><span>02</span><div><h2>Upload the apartment directory</h2><p>CSV or XLSX is recommended for office staff. JSON and the legacy Word list also work. Every row needs a Zone, Apartment, and Area.</p></div></li>
+    <li><span>03</span><div><h2>Add genuine historical exceptions</h2><p>Enter only confirmed exceptions in the form <strong>Elder Twum: Anua Obio -&gt; Mbierebe</strong>. The normal mapping handles every other change.</p></div></li>
+    <li><span>04</span><div><h2>Generate and review</h2><p>The system skips new arrivals and released missionaries, groups movements by the previous zone, and stops with an exact list if any transferred area is missing from the directory.</p></div></li>
+    <li><span>05</span><div><h2>Give the Word plan to the drivers</h2><p>The STATUS cells are intentionally blank. Drivers tick or mark each row only after that missionary has moved successfully. Keep the returned editable directory CSV for the next cycle.</p></div></li>
   </ol>
   <div class="guide-callout"><strong>Privacy reminder</strong><p>Never place real transfer files in GitHub, email attachments, tutorial recordings, or a public support request.</p></div>
 </div></section>

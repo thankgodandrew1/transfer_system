@@ -14,6 +14,7 @@ The generator:
 4. Masks confirmed incoming missionaries as `NEW MISSIONARY`.
 5. Stops publication when a row cannot be verified safely.
 6. Creates Word, native PDF, Excel, CSV, log, statistics, updated-roster, and ZIP downloads.
+7. Compares an approved current Transfer News with the previous cycle to create an apartment Transfer Movement plan.
 
 Each browser run uses an isolated temporary folder. Files expire automatically and are not stored in a database.
 
@@ -38,6 +39,32 @@ Each browser run uses an isolated temporary folder. Files expire automatically a
 - Transfer-sheet CSV and generation log
 
 If verification finds an unresolved discrepancy, publishing documents are not created. The results page still provides a review workbook, CSV, log, and review ZIP so the issue can be resolved safely.
+
+## Transfer Movement workflow
+
+After Transfer News is approved, open `/movement` and provide:
+
+| Input | Format | Purpose |
+|---|---|---|
+| Previous Transfer News | PDF or pasted table text | Missionary's previous zone and area |
+| Current Transfer News | PDF or pasted table text | Missionary's new area |
+| Apartment directory | CSV, XLSX, JSON, or DOCX | Maps every area to an apartment and zone |
+| Manual exceptions | Text, optional | Confirmed historical apartment exceptions such as `Elder Twum: Anua Obio -> Mbierebe` |
+
+The movement generator normalizes historical spacing and spelling differences, matches only missionaries present in both cycles, skips released missionaries and new arrivals, and groups apartment changes under the previous zone. A missing or ambiguous apartment mapping stops the run with a correction list instead of silently omitting a movement.
+
+The downloadable package contains:
+
+- A sample-matched portrait Word movement plan with `Missionary`, `FROM Apartment`, `TO Apartment`, and `STATUS` fields
+- A movement review CSV
+- The uploaded apartment directory normalized to an editable CSV
+- A ZIP containing all three files
+
+`STATUS` cells are deliberately blank. Drivers mark them only after each missionary's movement is completed successfully.
+
+### Maintaining apartments without coding
+
+Download `Apartment_Directory_Template.csv` from the Movement page, open it in Excel, and keep one row per area using the columns `Zone,Apartment,Area`. The system accepts that CSV directly on the next cycle. An XLSX workbook with the same three columns also works. Existing JSON and legacy Word directories are accepted for migration, and every successful run returns an editable CSV so future office personnel do not need to modify JSON.
 
 ## Run locally
 
@@ -97,7 +124,7 @@ The normal suite uses synthetic records. Never commit real input or generated ou
 
 ## Walkthrough video
 
-The **How to use** page embeds a 49-second, captioned, sanitized walkthrough. Its presenter notes are in [docs/walkthrough-script.md](docs/walkthrough-script.md). Rebuild the video after a major UI change with:
+The **How to use** page embeds a 56-second, English-narrated, captioned, sanitized walkthrough. Its presenter notes are in [docs/walkthrough-script.md](docs/walkthrough-script.md), and its narration source is `assets/walkthrough-narration.wav`. Rebuild the video after a major UI change with:
 
 ```powershell
 python scripts/build_walkthrough.py
@@ -120,6 +147,7 @@ Follow [docs/deployment.md](docs/deployment.md) for the full GitHub and Render w
 ## Main project files
 
 - `app.py` — Flask routes, upload security, isolated jobs, and downloads
+- `movement_plan.py` — Transfer News parsing, apartment-directory migration, comparison rules, and sample-matched movement DOCX rendering
 - `data/generate_transfer_sheet.py` — verified end-to-end workbook pipeline
 - `generate_news_format.py` — PDF comparison and News Format construction
 - `verify_news.py` — authoritative roster verification and masking

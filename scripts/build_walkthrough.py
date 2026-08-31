@@ -1,10 +1,12 @@
-"""Build the sanitized, captioned walkthrough video used by the Guide page."""
+"""Build the sanitized, narrated and captioned walkthrough used by the Guide page."""
 from __future__ import annotations
 
+import subprocess
 import textwrap
 from pathlib import Path
 
 import imageio.v2 as imageio
+import imageio_ffmpeg
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -12,8 +14,9 @@ from PIL import Image, ImageDraw, ImageFont
 ROOT = Path(__file__).resolve().parents[1]
 WIDTH, HEIGHT = 1280, 720
 FPS = 12
-SECONDS_PER_SLIDE = 7
+SECONDS_PER_SLIDE = 8
 FRAMES_PER_SLIDE = FPS * SECONDS_PER_SLIDE
+NARRATION = ROOT / "assets" / "walkthrough-narration.wav"
 GREEN = "#123f2a"
 GREEN_DARK = "#0b2b1d"
 GREEN_LIGHT = "#e4f2eb"
@@ -210,10 +213,12 @@ def slide_privacy() -> Image.Image:
 def build_video() -> None:
     slides = [slide_welcome(), slide_uploads(), slide_details(), slide_options(), slide_generate(), slide_review(), slide_privacy()]
     output = ROOT / "static" / "walkthrough.mp4"
+    silent_output = output.with_name("walkthrough.silent.mp4")
+    muxed_output = output.with_name("walkthrough.muxed.mp4")
     poster = ROOT / "static" / "video-poster.png"
     slides[0].save(poster, optimize=True)
     writer = imageio.get_writer(
-        output,
+        silent_output,
         fps=FPS,
         codec="libx264",
         quality=8,
@@ -233,7 +238,37 @@ def build_video() -> None:
                 writer.append_data(frame)
     finally:
         writer.close()
-    print(f"Created {output} and {poster}")
+
+    try:
+        if NARRATION.exists():
+            subprocess.run(
+                [
+                    imageio_ffmpeg.get_ffmpeg_exe(),
+                    "-y",
+                    "-i",
+                    str(silent_output),
+                    "-i",
+                    str(NARRATION),
+                    "-c:v",
+                    "copy",
+                    "-c:a",
+                    "aac",
+                    "-b:a",
+                    "160k",
+                    "-shortest",
+                    str(muxed_output),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            muxed_output.replace(output)
+            print(f"Created narrated {output} and {poster}")
+        else:
+            silent_output.replace(output)
+            print(f"Created silent {output} and {poster}; narration file was not found")
+    finally:
+        silent_output.unlink(missing_ok=True)
+        muxed_output.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ python -m pytest -q
 python app.py
 ```
 
-Open <http://127.0.0.1:5000>. Confirm that the generator loads, the **How to use** video plays, and the GitHub links open the correct repository. Stop the server with `Ctrl+C`.
+Open <http://127.0.0.1:5000>. Confirm that the Transfer News generator and **Movement plan** page load, the **How to use** video plays, and the GitHub links open the correct repository. Stop the server with `Ctrl+C`.
 
 ## 2. Push to the existing GitHub repository
 
@@ -30,7 +30,7 @@ Then commit and push:
 ```powershell
 git add .
 git status --short
-git commit -m "Match generated Transfer News to publication design"
+git commit -m "Add Transfer Movement plan generator"
 git push -u origin main
 ```
 
@@ -60,8 +60,9 @@ The repository URL and the `ThankGod Andrew` creator credit are already configur
 2. Confirm the access-key page appears. If the service will not start, check that `APP_ACCESS_KEY` is at least 12 characters.
 3. Enter the key and open **How to use**.
 4. Confirm the video plays, the favicon appears, and the GitHub links open `thankgodandrew1/transfer_system`.
-5. Run one sanitized test package before uploading real records.
-6. Open `/health`; it should return JSON with `"status": "ok"`.
+5. Run one sanitized Transfer News package and one sanitized movement-plan comparison before uploading real records.
+6. Confirm the downloaded movement Word document has blank STATUS cells for driver completion marks.
+7. Open `/health`; it should return JSON with `"status": "ok"`.
 
 ## 5. Understand the free-tier limits
 

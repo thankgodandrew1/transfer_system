@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Generate verified mission Transfer News documents from current and previous transfer records.">
+  <meta name="description" content="Generate verified mission Transfer News and apartment movement-plan documents.">
   <meta name="robots" content="noindex,nofollow,noarchive">
   <meta name="theme-color" content="#123f2a">
   <title>{% block title %}{{ app_name }}{% endblock %}</title>
@@ -24,6 +24,7 @@
       </a>
       <nav class="site-nav" aria-label="Primary navigation">
         <a href="{{ url_for('index') }}">Generator</a>
+        <a href="{{ url_for('movement') }}">Movement plan</a>
         <a href="{{ url_for('guide') }}">How to use</a>
         {% if github_url %}<a class="github-link" href="{{ github_url }}" target="_blank" rel="noreferrer">GitHub <span aria-hidden="true">&#8599;</span></a>{% endif %}
         {% if session.get('authorized') %}
@@ -52,7 +53,7 @@
         <strong>{{ app_name }}</strong>
         <p>Created by {% if github_url %}<a href="{{ github_url }}" target="_blank" rel="noreferrer">{{ creator_name }}</a>{% else %}{{ creator_name }}{% endif %}. Uploads are temporary and automatically removed.</p>
       </div>
-      <div class="footer-links"><a href="{{ url_for('guide') }}">User guide</a>{% if github_url %}<a href="{{ github_url }}" target="_blank" rel="noreferrer">Source on GitHub</a>{% endif %}</div>
+      <div class="footer-links"><a href="{{ url_for('movement') }}">Movement plan</a><a href="{{ url_for('guide') }}">User guide</a>{% if github_url %}<a href="{{ github_url }}" target="_blank" rel="noreferrer">Source on GitHub</a>{% endif %}</div>
     </div>
   </footer>
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>

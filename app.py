@@ -44,6 +44,16 @@ from generate_transfer_document import (
     title_slug,
 )
 from generate_transfer_pdf import build_statistics_pdf, build_transfer_pdf
+from movement_plan import (
+    DEFAULT_STATUS,
+    build_movement_docx,
+    compare_assignments,
+    load_apartment_directory,
+    parse_manual_overrides,
+    parse_transfer_pdf,
+    parse_transfer_text,
+    write_movement_csv,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -111,6 +121,13 @@ def _form_text(field: str, fallback: str, limit: int) -> str:
     value = request.form.get(field, "").strip()
     value = re.sub(r"[\x00-\x1f\x7f]", " ", value)
     return (value or fallback)[:limit]
+
+
+def _form_multiline(field: str, limit: int) -> str:
+    value = request.form.get(field, "")
+    value = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", value)
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    return value[:limit].strip()
 
 
 def _safe_next_path(value: str | None) -> str:
@@ -213,6 +230,42 @@ def _validate_upload(path: Path, kind: str) -> None:
         required = {"Name", "Field", "Value"}
         if not required.issubset(headers):
             raise ValueError("Corrections CSV must contain Name, Field, and Value columns.")
+
+
+def _save_apartment_directory(field: str, destination_dir: Path) -> Path:
+    uploaded = request.files.get(field)
+    if uploaded is None or not uploaded.filename:
+        raise ValueError("Missing required upload: apartment directory.")
+    suffix = Path(uploaded.filename).suffix.lower()
+    if suffix not in {".csv", ".xlsx", ".json", ".docx"}:
+        raise ValueError("Apartment directory must be a CSV, XLSX, JSON, or DOCX file.")
+    destination = destination_dir / f"apartment_directory{suffix}"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    uploaded.save(destination)
+    try:
+        size = destination.stat().st_size
+        if size == 0:
+            raise ValueError("The apartment directory is empty.")
+        if size > MAX_FILE_BYTES:
+            raise ValueError(f"Each upload must be {MAX_FILE_MB} MB or smaller.")
+        if suffix == ".xlsx":
+            _validate_upload(destination, "xlsx")
+        elif suffix == ".docx":
+            _validate_upload(destination, "docx")
+        elif suffix == ".json":
+            json.loads(destination.read_text(encoding="utf-8-sig"))
+        else:
+            with destination.open("r", encoding="utf-8-sig", newline="") as stream:
+                headers = {re.sub(r"[^A-Za-z]", "", value).lower() for value in next(csv.reader(stream), [])}
+            if not {"zone", "apartment", "area"}.issubset(headers):
+                raise ValueError("Apartment CSV must contain Zone, Apartment, and Area columns.")
+    except json.JSONDecodeError as exc:
+        destination.unlink(missing_ok=True)
+        raise ValueError("The apartment JSON file could not be read.") from exc
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    return destination
 
 
 def _save_upload(field: str, destination: Path, kind: str, required: bool = True) -> Path | None:
@@ -423,6 +476,129 @@ def _run_generation(
     return records, summary, warning_handler.messages, None
 
 
+def _parse_movement_source(
+    pdf_path: Path | None,
+    fallback_text: str,
+    apartment_directory,
+    label: str,
+):
+    if pdf_path is not None:
+        try:
+            return parse_transfer_pdf(pdf_path)
+        except ValueError as exc:
+            if not fallback_text:
+                raise
+            parsed = parse_transfer_text(fallback_text, apartment_directory)
+            parsed.warnings.insert(0, f"{label} PDF fallback used: {exc}")
+            return parsed
+    if fallback_text:
+        return parse_transfer_text(fallback_text, apartment_directory)
+    raise ValueError(f"Upload the {label} PDF or paste its Missionary, Zone, and Area table as text.")
+
+
+def _run_movement_generation(
+    job_dir: Path,
+    values: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[str]]:
+    input_dir = job_dir / "inputs"
+    output_dir = job_dir / "outputs"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    previous_pdf = _save_upload(
+        "movement_previous_pdf",
+        input_dir / "previous_transfer_news.pdf",
+        "pdf",
+        required=False,
+    )
+    current_pdf = _save_upload(
+        "movement_current_pdf",
+        input_dir / "current_transfer_news.pdf",
+        "pdf",
+        required=False,
+    )
+    directory_path = _save_apartment_directory("apartment_directory", input_dir)
+    directory = load_apartment_directory(directory_path)
+
+    previous = _parse_movement_source(
+        previous_pdf,
+        values["previous_text"],
+        directory,
+        "previous Transfer News",
+    )
+    current = _parse_movement_source(
+        current_pdf,
+        values["current_text"],
+        directory,
+        "current Transfer News",
+    )
+    overrides = parse_manual_overrides(values["manual_overrides"], values["default_status"])
+    comparison = compare_assignments(
+        previous.assignments,
+        current.assignments,
+        directory,
+        overrides,
+        values["default_status"],
+    )
+
+    previous_title = values["previous_title"] or previous.title or "PREVIOUS TRANSFER NEWS"
+    current_title = values["current_title"] or current.title or f"{datetime.now():%B %Y} TRANSFER NEWS".upper()
+    cycle_slug = title_slug(re.sub(r"\bTRANSFER\s+NEWS\b", "", current_title, flags=re.I).strip() or "MOVEMENT")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    docx_path = output_dir / f"Transfer_Movement_{cycle_slug}_{stamp}.docx"
+    csv_path = output_dir / f"Transfer_Movement_{cycle_slug}_{stamp}.csv"
+    directory_csv = output_dir / "Apartment_Directory_Editable.csv"
+    directory_csv.write_bytes(directory.to_csv_bytes())
+
+    effective_date = values["effective_date"]
+    try:
+        parsed_effective_date = datetime.strptime(effective_date, "%Y-%m-%d").date() if effective_date else None
+    except ValueError as exc:
+        raise ValueError("Effective date must be a valid calendar date.") from exc
+    build_movement_docx(
+        comparison.movements,
+        docx_path,
+        mission_name=values["mission_name"],
+        previous_title=previous_title,
+        current_title=current_title,
+        president=values["president"],
+        prepared_by=values["prepared_by"],
+        effective_date=parsed_effective_date,
+        overrides=overrides,
+    )
+    write_movement_csv(comparison.movements, csv_path)
+
+    file_specs = [
+        (docx_path, "Transfer Movement - Word", "docx"),
+        (csv_path, "Movement review table", "csv"),
+        (directory_csv, "Editable apartment directory", "csv"),
+    ]
+    records: list[dict[str, Any]] = []
+    for path, label, kind in file_specs:
+        record = _file_record(path, label, kind)
+        record["relative_path"] = str(path.relative_to(job_dir)).replace("\\", "/")
+        records.append(record)
+    zip_path = output_dir / f"Transfer_Movement_Package_{cycle_slug}_{stamp}.zip"
+    _build_download_zip(job_dir, records, zip_path)
+    zip_record = _file_record(zip_path, "Download movement package", "zip")
+    zip_record["relative_path"] = str(zip_path.relative_to(job_dir)).replace("\\", "/")
+    records.insert(0, zip_record)
+
+    summary = {
+        "movements": len(comparison.movements),
+        "zones": comparison.zone_count,
+        "matched": comparison.matched_total,
+        "released": comparison.released_total,
+        "new_arrivals": comparison.new_arrivals_total,
+        "unchanged": comparison.unchanged_total,
+        "previous_total": comparison.previous_total,
+        "current_total": comparison.current_total,
+        "manual_overrides": len(overrides),
+    }
+    warnings = [*previous.warnings, *current.warnings, *comparison.warnings]
+    return records, summary, warnings
+
+
 @app.before_request
 def before_request() -> Any:
     _cleanup_expired_jobs()
@@ -498,6 +674,29 @@ def index():
     )
 
 
+@app.get("/movement")
+def movement():
+    return render_template(
+        "movement.html",
+        defaults={
+            "mission_name": DEFAULT_MISSION_NAME,
+            "president": DEFAULT_PRESIDENT,
+            "prepared_by": DEFAULT_PREPARED_BY,
+            "effective_date": datetime.now().date().isoformat(),
+        },
+    )
+
+
+@app.get("/movement/apartment-directory-template.csv")
+def apartment_directory_template():
+    return send_file(
+        BASE_DIR / "data" / "apartment_directory.example.csv",
+        as_attachment=True,
+        download_name="Apartment_Directory_Template.csv",
+        conditional=True,
+    )
+
+
 @app.post("/generate")
 def generate():
     _require_csrf()
@@ -519,6 +718,7 @@ def generate():
     }
     manifest: dict[str, Any] = {
         "job_id": job_id,
+        "kind": "transfer_news",
         "status": "processing",
         "created_at": created.isoformat(),
         "expires_at": (created + timedelta(minutes=JOB_TTL_MINUTES)).isoformat(),
@@ -549,10 +749,58 @@ def generate():
     return redirect(url_for("job_result", job_id=job_id))
 
 
+@app.post("/movement/generate")
+def generate_movement():
+    _require_csrf()
+    if not generation_lock.acquire(blocking=False):
+        flash("Another document is being generated. Please wait a moment and try again.", "error")
+        return redirect(url_for("movement")), 429
+
+    job_id = secrets.token_hex(16)
+    job_dir = _job_dir(job_id)
+    job_dir.mkdir(parents=True, exist_ok=False)
+    created = utc_now()
+    values = {
+        "mission_name": _form_text("mission_name", DEFAULT_MISSION_NAME, 120),
+        "president": _form_text("president", DEFAULT_PRESIDENT, 120),
+        "prepared_by": _form_text("prepared_by", DEFAULT_PREPARED_BY, 160),
+        "previous_title": _form_text("previous_title", "", 120).upper(),
+        "current_title": _form_text("current_title", "", 120).upper(),
+        "effective_date": _form_text("effective_date", "", 10),
+        "default_status": DEFAULT_STATUS,
+        "previous_text": _form_multiline("previous_transfer_text", 2_000_000),
+        "current_text": _form_multiline("current_transfer_text", 2_000_000),
+        "manual_overrides": _form_multiline("manual_overrides", 20_000),
+    }
+    manifest: dict[str, Any] = {
+        "job_id": job_id,
+        "kind": "movement",
+        "status": "processing",
+        "created_at": created.isoformat(),
+        "expires_at": (created + timedelta(minutes=JOB_TTL_MINUTES)).isoformat(),
+        "files": [],
+        "summary": {},
+        "warnings": [],
+    }
+    _write_manifest(job_dir, manifest)
+    try:
+        files, summary, warnings = _run_movement_generation(job_dir, values)
+        manifest.update(status="complete", files=files, summary=summary, warnings=warnings)
+    except ValueError as exc:
+        manifest.update(status="error", error=str(exc))
+    except Exception as exc:
+        manifest.update(status="error", error=f"Movement generation stopped: {exc}")
+    finally:
+        _write_manifest(job_dir, manifest)
+        generation_lock.release()
+    return redirect(url_for("job_result", job_id=job_id))
+
+
 @app.get("/jobs/<job_id>")
 def job_result(job_id: str):
     manifest = _load_manifest(job_id)
-    return render_template("result.html", job=manifest)
+    template = "movement_result.html" if manifest.get("kind") == "movement" else "result.html"
+    return render_template(template, job=manifest)
 
 
 @app.get("/jobs/<job_id>/download/<path:filename>")
