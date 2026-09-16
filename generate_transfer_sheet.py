@@ -1,195 +1,34 @@
 from __future__ import annotations
 
 import argparse
-import re
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-from pypdf import PdfReader # type: ignore
+
+from generate_news_format import parse_tm_zones
 
 
-ASSIGNMENT_CODES = {
-    "AP",
-    "AP1",
-    "AP2",
-    "DL",
-    "DT",
-    "JC",
-    "SA",
-    "SC",
-    "STL1",
-    "STL2",
-    "TR",
-    "ZL1",
-    "ZL2",
-}
+def extract_transfer_records(pdf_path: Path) -> list[dict[str, str]]:
+    """One row per staffed area card in the Transfer Management PDF.
 
-CODE_PATTERN = re.compile(
-    r"(STL1|STL2|ZL1|ZL2|AP1|AP2|DL|DT|JC|SA|SC|TR|AP)"
-)
-
-
-def clean_text(value: str) -> str:
-    value = value.replace("&amp;", "&")
-    value = re.sub(r"\s+", " ", value)
-    return value.strip()
-
-
-def is_footer(line: str) -> bool:
-    return (
-        "Transfer Management" in line
-        or "imos.churchofjesuschrist.org" in line
-        or bool(re.match(r"^\d{1,2}/\d{1,2}/\d{2},", line))
-    )
-
-
-def has_assignment_code(line: str) -> bool:
-    return bool(CODE_PATTERN.search(line))
-
-
-def looks_like_name_pool(line: str) -> bool:
-    if has_assignment_code(line):
-        return False
-    if any(char.isdigit() for char in line):
-        return False
-    if "/" in line:
-        return False
-    return len(line) >= 18
-
-
-def split_codes_and_text(line: str) -> list[tuple[str, str]]:
-    """Split a mixed PDF line into ordered TEXT and CODE tokens."""
-    if clean_text(line) == "T":
-        return []
-
-    tokens: list[tuple[str, str]] = []
-    index = 0
-
-    for match in CODE_PATTERN.finditer(line):
-        start, end = match.span()
-        before = clean_text(line[index:start])
-        if before:
-            tokens.append(("TEXT", before))
-
-        code = match.group(1)
-        tokens.append(("CODE", code))
-
-        index = end
-
-    after = clean_text(line[index:])
-    if after:
-        tokens.append(("TEXT", after))
-
-    if not tokens and line:
-        tokens.append(("TEXT", clean_text(line)))
-
-    return tokens
-
-
-def finalize_record(
-    records: list[dict[str, str]],
-    zone: str,
-    district: str,
-    missionary_pool: str,
-    area: str,
-    codes: list[str],
-) -> None:
-    area = clean_text(area)
-    codes = [code for code in codes if code in ASSIGNMENT_CODES]
-
-    if not area or not codes:
-        return
-
-    records.append(
-        {
-            "Zone": zone,
-            "District": district,
-            "Area": area,
-            "Assignment": " / ".join(codes),
-            "Missionary Pool": missionary_pool,
-        }
-    )
-
-
-def parse_area_assignments(
-    lines: list[str],
-    zone: str,
-    district: str,
-    missionary_pool: str,
-) -> list[dict[str, str]]:
+    Uses the same layout-aware parser as the News Format, so both sheets
+    always describe the same set of areas. Cards with nobody assigned are
+    closing areas and are left out."""
     records: list[dict[str, str]] = []
-    current_area = ""
-    current_codes: list[str] = []
-
-    for line in lines:
-        for token_type, value in split_codes_and_text(line):
-            if token_type == "TEXT":
-                if current_area and current_codes:
-                    finalize_record(
-                        records,
-                        zone,
-                        district,
-                        missionary_pool,
-                        current_area,
-                        current_codes,
-                    )
-                    current_area = value
-                    current_codes = []
-                elif current_area:
-                    current_area = clean_text(f"{current_area} {value}")
-                else:
-                    current_area = value
-            else:
-                current_codes.append(value)
-
-    finalize_record(records, zone, district, missionary_pool, current_area, current_codes)
+    for area in parse_tm_zones(Path(pdf_path)):
+        if not area.members:
+            continue
+        records.append(
+            {
+                "Zone": area.zone,
+                "District": area.district,
+                "Area": area.area,
+                "Assignment": " / ".join(m.badge for m in area.members if m.badge),
+                "Missionary Pool": " & ".join(m.name for m in area.members),
+            }
+        )
     return records
-
-
-def split_page_into_blocks(lines: list[str]) -> tuple[str, list[tuple[str, str, list[str]]]]:
-    zone = lines[0] if lines else "UNKNOWN ZONE"
-    blocks: list[tuple[str, str, list[str]]] = []
-
-    if len(lines) < 3:
-        return zone, blocks
-
-    index = 1
-    while index + 1 < len(lines):
-        missionary_pool = lines[index]
-        district = lines[index + 1]
-        index += 2
-
-        detail_lines: list[str] = []
-        while index < len(lines):
-            line = lines[index]
-            next_line = lines[index + 1] if index + 1 < len(lines) else ""
-
-            if detail_lines and looks_like_name_pool(line) and next_line and not has_assignment_code(next_line):
-                break
-
-            detail_lines.append(line)
-            index += 1
-
-        blocks.append((missionary_pool, district, detail_lines))
-
-    return zone, blocks
-
-
-def extract_pdf_lines(pdf_path: Path) -> list[list[str]]:
-    reader = PdfReader(str(pdf_path))
-    pages: list[list[str]] = []
-
-    for page in reader.pages:
-        text = page.extract_text() or ""
-        lines = [
-            clean_text(line)
-            for line in text.splitlines()
-            if clean_text(line) and not is_footer(clean_text(line))
-        ]
-        pages.append(lines)
-
-    return pages
 
 
 def generate_transfer_sheet(pdf_path: Path, output_dir: Path) -> tuple[Path, Path, Path]:
@@ -199,15 +38,7 @@ def generate_transfer_sheet(pdf_path: Path, output_dir: Path) -> tuple[Path, Pat
     extracted_dir.mkdir(exist_ok=True)
     logs_dir.mkdir(exist_ok=True)
 
-    all_records: list[dict[str, str]] = []
-    page_lines = extract_pdf_lines(pdf_path)
-
-    for lines in page_lines:
-        zone, blocks = split_page_into_blocks(lines)
-        for missionary_pool, district, detail_lines in blocks:
-            all_records.extend(
-                parse_area_assignments(detail_lines, zone, district, missionary_pool)
-            )
+    all_records = extract_transfer_records(pdf_path)
 
     if not all_records:
         raise RuntimeError("No transfer rows were found. Check that the PDF is a current Transfer Management export.")

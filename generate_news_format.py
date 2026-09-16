@@ -35,6 +35,7 @@ supplied.
 """
 from __future__ import annotations
 
+import html
 import logging
 import re
 from collections import defaultdict
@@ -87,9 +88,11 @@ MONTHS = [
     "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER",
 ]
 
-# Vertical anchors of the two district blocks on each TM zone page.
+# Vertical anchors of the two district blocks on a typical TM zone page.
 # Each block: district header, area band (may contain T training markers),
-# badge-code row, name row.
+# badge-code row, name row. Only a fallback: the real bands are located per
+# page by _find_blocks, because a block moves up whenever the block above it
+# has no row of T markers.
 TM_BLOCKS = [
     {"district": (58, 80), "area": (80, 118), "codes": (118, 130), "names": (130, 145)},
     {"district": (178, 200), "area": (200, 237), "codes": (237, 249), "names": (249, 264)},
@@ -198,8 +201,10 @@ def _canon_zone(text: str, registry: dict[str, str] | None = None) -> str:
 
 
 def _base_name(key: str) -> str:
-    """MENSAH.J -> MENSAH (suffix used by the mission to disambiguate)."""
-    return key.split(".")[0]
+    """MENSAH.J or MENSAH J. -> MENSAH. The mission's older news uses the
+    first suffix style to disambiguate duplicate last names; the documents
+    this system prints (verify_news._display_name) use the second."""
+    return re.sub(r"\s+[A-Z]$", "", key.split(".")[0].strip())
 
 
 def _area_match(a: str, b: str) -> bool:
@@ -348,6 +353,47 @@ def parse_incoming(pdf_path: Path) -> set[str]:
 # assign every name to the closest-preceding label, exactly like the mission's
 # own layout groups them. A label with no name in its range is a closed area.
 
+def _find_blocks(chars: list[dict]) -> list[dict]:
+    """Locate every district block on a zone page from the text itself.
+
+    Fixed page coordinates are unsafe: a block sits ~11pt higher whenever the
+    block above it has no T-marker row, and a zone can have more than two
+    districts. District headings use the largest body font and missionary
+    names the next largest; the area, T-marker and badge rows always sit at
+    the same offsets from those two rows."""
+    rows: dict[int, float] = {}
+    for c in chars:
+        if c["top"] < 50:  # page title and zone heading
+            continue
+        y = round(c["top"])
+        rows[y] = max(rows.get(y, 0.0), round(float(c.get("size", 0)), 1))
+    sizes = sorted(set(rows.values()), reverse=True)
+    if len(sizes) < 2:
+        return []
+    heading_size, name_size = sizes[0], sizes[1]
+
+    headings: list[int] = []
+    for y in sorted(y for y, s in rows.items() if s == heading_size):
+        if not headings or y - headings[-1] > 3:
+            headings.append(y)
+    name_rows = sorted(y for y, s in rows.items() if s == name_size)
+
+    blocks: list[dict] = []
+    for i, d in enumerate(headings):
+        next_d = headings[i + 1] if i + 1 < len(headings) else float("inf")
+        names = [y for y in name_rows if d < y < next_d]
+        if not names:
+            continue
+        n = names[0]
+        blocks.append({
+            "district": (d - 3, d + 9),
+            "area": (d + 9, n - 16),
+            "codes": (n - 16, n - 4),
+            "names": (n - 4, min(n + 11, next_d - 3)),
+        })
+    return blocks
+
+
 def _parse_block(chars: list[dict], block: dict, zone: str) -> list[AreaRecord]:
     name_chars = _band_chars(chars, *block["names"])
     tokens = _name_tokens(name_chars)
@@ -412,7 +458,7 @@ def _parse_block(chars: list[dict], block: dict, zone: str) -> list[AreaRecord]:
 
     records: list[AreaRecord] = []
     for i, (_x0, text) in enumerate(labels):
-        area = re.sub(r"\s+", " ", text)
+        area = re.sub(r"\s+", " ", html.unescape(text))
         area = re.sub(r"-\s+", "-", area).strip().strip("/").strip()
         members = sorted(area_members.get(i, []), key=lambda m: m.x)
         records.append(AreaRecord(zone=zone, district=district, area=area or "UNKNOWN", members=members))
@@ -439,7 +485,7 @@ def parse_tm_zones(pdf_path: Path) -> list[AreaRecord]:
             zone_raw = re.sub(r"\s*Zone\s*$", "", header_text, flags=re.IGNORECASE).strip()
             zone = _canon_zone(zone_raw) or _norm(zone_raw)
 
-            for block in TM_BLOCKS:
+            for block in _find_blocks(chars) or TM_BLOCKS:
                 all_areas.extend(_parse_block(chars, block, zone))
 
     logger.info("Parsed %d areas from Transfer Management", len(all_areas))
@@ -451,8 +497,12 @@ def parse_tm_zones(pdf_path: Path) -> list[AreaRecord]:
 def parse_zone_sections(pdf_path: Path) -> list[str]:
     """Pre-pass: every zone name mentioned as a heading or zone-index entry, in
     document order. This is the canonical zone ORDER carried from one transfer
-    news to the next (requirement: never re-sort zones)."""
-    finder = re.compile(r"([A-Z][A-Z0-9&.\- ]*?)\s+ZONE\b")
+    news to the next (requirement: never re-sort zones).
+
+    Extracted text often drops the space before ZONE ("01 UYOZONE (12)"), so
+    the space is optional; a name never starts mid-word or spans another
+    ZONE, and "ZONE-BY-ZONE" / "ZONE LEADER" are prose, not headings."""
+    finder = re.compile(r"(?<![A-Z0-9])((?!ZONE)[A-Z](?:(?!ZONE)[A-Z0-9&.\- ])*?)\s*ZONE\b(?!-|\s*LEADER)")
     sections: list[str] = []
     seen: set[str] = set()
 
@@ -830,11 +880,16 @@ def _group_assignments(area: AreaRecord) -> list[str]:
     else:
         assignments = ["SC"] + ["JC"] * len(juniors)
 
-    # SA (special assignment) carries over from the previous news for
-    # whichever badge-less members were SA last time.
-    for i, member in enumerate(members):
-        if not _norm(member.badge) and member.prev is not None and _norm(member.prev.assignment) == "SA":
-            assignments[i] = "SA"
+    # SA (special assignment) never appears as a Transfer Management badge,
+    # so it carries over from the previous news. Everyone serving with an SA
+    # is also an SA — the whole companionship — except members whose badge
+    # names another calling (SC/JC only mark senior and junior). Exceptions
+    # are handled with a manual correction.
+    sa_eligible = [_norm(m.badge) in ("", "SC", "JC") for m in members]
+    sa_group = any(
+        ok and m.prev is not None and _norm(m.prev.assignment) == "SA"
+        for ok, m in zip(sa_eligible, members)
+    )
 
     for i, junior in enumerate(juniors, start=1):
         junior_trainee_marker = junior.has_t and junior.state != "matched"
@@ -848,6 +903,9 @@ def _group_assignments(area: AreaRecord) -> list[str]:
             if assignments[0] == "DL":
                 assignments[0] = "DT"
             assignments[i] = "JC"
+
+    if sa_group:
+        assignments = ["SA" if ok else code for ok, code in zip(sa_eligible, assignments)]
 
     return assignments
 

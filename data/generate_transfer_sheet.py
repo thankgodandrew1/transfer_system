@@ -18,11 +18,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from generate_transfer_sheet import (  # noqa: E402
-    extract_pdf_lines,
-    parse_area_assignments,
-    split_page_into_blocks,
-)
+from generate_transfer_sheet import extract_transfer_records  # noqa: E402
 from generate_news_format import generate_news_format  # noqa: E402
 from verify_news import Issue, VerificationResult, verify  # noqa: E402
 
@@ -37,6 +33,26 @@ def _verification_sheet(vresult: VerificationResult) -> pd.DataFrame:
     for n in vresult.notes:
         rows.append({"Type": "NOTE", "Missionary": n.row_name, "Field": "", "Old Value": "", "New Value": "", "Detail": n.detail})
     return pd.DataFrame(rows, columns=["Type", "Missionary", "Field", "Old Value", "New Value", "Detail"])
+
+
+def _restore_zone_order(news: pd.DataFrame, zone_order: list[str]) -> pd.DataFrame:
+    """Re-sort News Format rows after verification.
+
+    Documents print zone sections in the order each Previous Zone first
+    appears, so a row whose Previous Zone verification corrected (e.g. a
+    revealed trainee the parser had grouped under their companion's zone)
+    would drag its whole zone ahead of the carried-over order. Re-rank by the
+    corrected zone; the parser's within-zone keys stay as they were."""
+    if news.empty or "_row_order" not in news.columns:
+        return news
+    rank = {zone.upper(): index for index, zone in enumerate(zone_order)}
+    news = news.copy()
+    group_zone = news["Previous Zone"].fillna("").astype(str).str.strip()
+    group_zone = group_zone.where(group_zone != "", news["New/Existing Zone"].astype(str))
+    news["_zone_order"] = group_zone.str.upper().map(lambda zone: rank.get(zone, len(rank)))
+    return news.sort_values(
+        ["_zone_order", "_prev_tier", "_row_order", "Name of Missionary"], kind="stable"
+    ).reset_index(drop=True)
 
 
 def generate_transfer_sheet(
@@ -57,15 +73,7 @@ def generate_transfer_sheet(
     extracted_dir.mkdir(exist_ok=True)
     logs_dir.mkdir(exist_ok=True)
 
-    all_records: list[dict[str, str]] = []
-    page_lines = extract_pdf_lines(pdf_path)
-
-    for lines in page_lines:
-        zone, blocks = split_page_into_blocks(lines)
-        for missionary_pool, district, detail_lines in blocks:
-            all_records.extend(
-                parse_area_assignments(detail_lines, zone, district, missionary_pool)
-            )
+    all_records = extract_transfer_records(pdf_path)
 
     if not all_records:
         raise RuntimeError("No transfer rows were found. Check that the PDF is a current Transfer Management export.")
@@ -120,7 +128,7 @@ def generate_transfer_sheet(
             old_report_path,
             manual_corrections_path=manual_corrections_path,
         )
-        news_df = vresult.news
+        news_df = _restore_zone_order(vresult.news, zone_order)
         if vresult.new_missionary_count is not None and vresult.new_missionary_count != new_missionary_count:
             vresult.notes.insert(0, Issue(
                 "", f"New Missionaries (Incoming): News Format's masked-row count was "

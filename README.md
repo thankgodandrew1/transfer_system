@@ -10,7 +10,7 @@ The generator:
 
 1. Parses the current Transfer Management PDF.
 2. Compares it with the previous Transfer News PDF.
-3. Verifies current and previous facts against the two authoritative roster reports.
+3. Verifies current and previous facts against the two authoritative roster reports, and confirms every current missionary who is not newly arrived has exactly one row.
 4. Masks confirmed incoming missionaries as `NEW MISSIONARY`.
 5. Stops publication when a row cannot be verified safely.
 6. Creates Word, native PDF, Excel, CSV, log, statistics, updated-roster, and ZIP downloads.

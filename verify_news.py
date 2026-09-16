@@ -23,6 +23,7 @@ Run standalone: python verify_news.py <workbook.xlsx> [current_report.xlsx] [old
 """
 from __future__ import annotations
 
+import html
 import re
 import sys
 from dataclasses import dataclass, field
@@ -109,6 +110,14 @@ def _split_report_companions(raw: object) -> list[str]:
     return names
 
 
+def _clean_place(raw: object) -> str:
+    """Report place names carry HTML entities ('Ikot Ebo 1&amp;2') and stray
+    edge slashes ('Afaha Eket/', '/Nkana'); clean them the same way the
+    Transfer Management parser does so a corrected value prints cleanly."""
+    text = re.sub(r"\s+", " ", html.unescape(str(raw or "")))
+    return re.sub(r"-\s+", "-", text).strip().strip("/").strip()
+
+
 def load_report(path: Path) -> list[ReportRecord]:
     wb = openpyxl.load_workbook(str(path), data_only=True)
     ws = wb[wb.sheetnames[0]]
@@ -125,15 +134,15 @@ def load_report(path: Path) -> list[ReportRecord]:
         prior_pos_raw = row[idx["Position Prior To Change"]] if "Position Prior To Change" in idx else None
         type_raw = str(row[idx["Type"]] or "").strip().upper() if "Type" in idx else ""
         records.append(ReportRecord(
-            zone=str(row[idx["Zone"]] or "").strip(),
-            district=str(row[idx["District"]] or "").strip(),
-            area=str(row[idx["Area"]] or "").strip(),
+            zone=_clean_place(row[idx["Zone"]]),
+            district=_clean_place(row[idx["District"]]),
+            area=_clean_place(row[idx["Area"]]),
             full_name=name,
             last=last,
             title="SISTER" if type_raw.startswith("SISTER") else "ELDER",
             position=_normalize_position(row[idx["Position"]]),
             companions=_split_report_companions(row[idx["Companion"]]),
-            prior_area=str(prior_area).strip() if prior_area else None,
+            prior_area=_clean_place(prior_area) if prior_area else None,
             prior_position=_normalize_position(prior_pos_raw) if prior_pos_raw else None,
         ))
     return records
@@ -284,6 +293,10 @@ def verify(
             return True
         if n == "DT" and r == "DL":
             return True
+        # Neither report has an SA code either: a special-assignment
+        # missionary exports as a plain SC/JC.
+        if n == "SA" and r in ("SC", "JC", ""):
+            return True
         return False
 
     def strip_zone_suffix(zone: str) -> str:
@@ -409,7 +422,7 @@ def verify(
         # A DL/SC training a confirmed-new missionary (absent from
         # old_transfer_report.xlsx entirely) should read DT/TR, even though
         # neither report captures that badge directly pre-transfer.
-        if old_records and rec.position in ("DL", "SC", ""):
+        if old_records and rec.position in ("DL", "SC", "") and _norm_key(df.at[idx, "Assignment"]) != "SA":
             companion_is_new = any(
                 _norm_key(c.split(",")[0]) in report_comp_lasts
                 and old_by_fullname.get(_norm_key(c)) is None
@@ -421,6 +434,38 @@ def verify(
                     corrections.append(Correction(row_name, "Assignment", str(row["Assignment"]), expected,
                                                    "training a companion absent from old_transfer_report.xlsx"))
                     df.at[idx, "Assignment"] = expected
+
+    # Coverage: the loop above only checks rows the PDF parser produced, so a
+    # district the parser missed would never be noticed. Check the other
+    # direction too — every current missionary who isn't masked as new must
+    # own exactly one row. Without the old report, masked new missionaries
+    # can't be told apart from missing ones, so the check needs it.
+    if old_records:
+        rows_per_rec: dict[int, int] = {}
+        for rec in idx_to_rec.values():
+            rows_per_rec[id(rec)] = rows_per_rec.get(id(rec), 0) + 1
+        for rec in named_current:
+            count = rows_per_rec.get(id(rec), 0)
+            where = f"{strip_zone_suffix(rec.zone)} / {rec.area}"
+            if count == 0:
+                result.blocking_errors.append(Issue(
+                    _display_name(rec, dup_last_names, confirmed_new_fullnames),
+                    f"{rec.full_name} ({where}) is in current_transfer_report.xlsx but has no row in the "
+                    "Transfer News — either the Transfer Management PDF was not read completely or this "
+                    "missionary was wrongly treated as new.",
+                    "blocking",
+                ))
+            elif count > 1:
+                result.blocking_errors.append(Issue(
+                    _display_name(rec, dup_last_names, confirmed_new_fullnames),
+                    f"{rec.full_name} ({where}) matches {count} Transfer News rows — only one can be right.",
+                    "blocking",
+                ))
+    else:
+        result.notes.append(Issue(
+            "", "No old_transfer_report.xlsx supplied — could not check that every current missionary has a row.",
+            "note",
+        ))
 
     # Drop every confirmed-new missionary's own row. Their companion cells
     # elsewhere already read "NEW MISSIONARY" (built via _display_name
