@@ -245,6 +245,21 @@ def _deduplicate_assignments(assignments: Iterable[Assignment]) -> list[Assignme
     return list(by_name.values())
 
 
+def _append_split_row(
+    previous: Assignment,
+    name_fragment: str = "",
+    zone_fragment: str = "",
+    area_fragment: str = "",
+) -> Assignment:
+    """Rejoin a table row that PDF export split across pages."""
+    return Assignment(
+        name=clean_text(f"{previous.name} {name_fragment}"),
+        zone=clean_text(f"{previous.zone} {zone_fragment}"),
+        area=clean_text(f"{previous.area} {area_fragment}"),
+        order=previous.order,
+    )
+
+
 def _header_indexes(row: Sequence[object]) -> tuple[int, int, int] | None:
     cells = [canonical(cell) for cell in row]
     missionary = next((index for index, cell in enumerate(cells) if "MISSIONARY" in cell), None)
@@ -321,11 +336,11 @@ def parse_transfer_pdf(path: str | Path) -> ParseResult:
                         area_fragment = clean_text(row[area_index])
                         if name_fragment or zone_fragment or area_fragment:
                             previous = assignments[-1]
-                            assignments[-1] = Assignment(
-                                name=clean_text(f"{previous.name} {name_fragment}"),
-                                zone=clean_text(f"{previous.zone} {zone_fragment}"),
-                                area=clean_text(f"{previous.area} {area_fragment}"),
-                                order=previous.order,
+                            assignments[-1] = _append_split_row(
+                                previous,
+                                name_fragment,
+                                zone_fragment,
+                                area_fragment,
                             )
                         continue
                     if not re.fullmatch(r"\d{1,3}", sequence_digits):
@@ -333,6 +348,17 @@ def parse_transfer_pdf(path: str | Path) -> ParseResult:
                     name = clean_text(row[name_index])
                     zone = clean_text(row[zone_index])
                     area = clean_text(row[area_index])
+                    if (
+                        assignments
+                        and assignments[-1].key in {"ELDER", "SISTER"}
+                        and name
+                        and (not zone or not area)
+                    ):
+                        # A two-digit sequence can itself split across pages,
+                        # such as "1" then "5" for row 15. The surname and
+                        # remaining zone then appear as a partial numbered row.
+                        assignments[-1] = _append_split_row(assignments[-1], name, zone, area)
+                        continue
                     if not name or not zone or not area:
                         continue
                     order += 1

@@ -167,28 +167,50 @@ def test_roster_missionary_without_a_news_row_is_blocking(tmp_path: Path) -> Non
     assert "no row" in result.blocking_errors[0].detail
 
 
-def _prev_record(assignment: str) -> generate_news_format.MissionaryRecord:
+def _prev_record(assignment: str, companion: str = "") -> generate_news_format.MissionaryRecord:
     return generate_news_format.MissionaryRecord(
         display_name="ELDER X", title="ELDER", last_name="X", assignment=assignment,
-        section_zone="UYO", assigned_zone="UYO", area="CENTRAL", companion="",
+        section_zone="UYO", assigned_zone="UYO", area="CENTRAL", companion=companion,
     )
 
 
-def test_everyone_serving_with_an_sa_is_an_sa() -> None:
+def test_sa_is_not_inferred_from_a_previous_transfer() -> None:
     TM = generate_news_format.TMMissionary
-    trio = generate_news_format.AreaRecord(zone="UYO", district="CENTRAL", area="CENTRAL", members=[
-        TM(name="Alpha", x=0, badge="SC", prev=_prev_record("SA"), state="matched"),
-        TM(name="Bravo", x=30, prev=_prev_record("JC"), state="matched"),
-        TM(name="Charlie", x=60, state="revealed"),
+    former_sa_pair = generate_news_format.AreaRecord(zone="UYO", district="CENTRAL", area="CENTRAL", members=[
+        TM(name="Alpha", x=0, badge="SC", prev=_prev_record("SA", "ELDER BRAVO"), state="matched"),
+        TM(name="Bravo", x=30, badge="JC", prev=_prev_record("SA", "ELDER ALPHA"), state="matched"),
     ])
-    assert generate_news_format._group_assignments(trio) == ["SA", "SA", "SA"]
+    assert generate_news_format._group_assignments(former_sa_pair) == ["SC", "JC"]
 
-    # A called leader keeps the calling their badge shows.
+    # An SA transferred away from the former SA companionship follows the
+    # current DL/JC pairing rather than keeping the old special assignment.
     pair = generate_news_format.AreaRecord(zone="UYO", district="CENTRAL", area="CENTRAL", members=[
         TM(name="Delta", x=0, badge="DL", prev=_prev_record("DL"), state="matched"),
-        TM(name="Echo", x=30, prev=_prev_record("SA"), state="matched"),
+        TM(name="Echo", x=30, badge="JC", prev=_prev_record("SA", "ELDER FORMER COMPANION"), state="matched"),
     ])
-    assert generate_news_format._group_assignments(pair) == ["DL", "SA"]
+    assert generate_news_format._group_assignments(pair) == ["DL", "JC"]
+
+
+def test_manual_assignment_correction_accepts_a_full_missionary_name(tmp_path: Path) -> None:
+    import verify_news
+
+    corrections_file = tmp_path / "role-overrides.csv"
+    corrections_file.write_text(
+        "Name,Field,Value\nElder Erondu,Assignment,JC\nElder Asamoah,Assignment,SA\n",
+        encoding="utf-8",
+    )
+    news = pd.DataFrame(
+        [
+            {"Name of Missionary": "ELDER ERONDU", "Assignment": "SA"},
+            {"Name of Missionary": "ELDER ASAMOAH", "Assignment": "JC"},
+        ]
+    )
+    corrections = []
+
+    verify_news._apply_manual_corrections(news, corrections_file, corrections)
+
+    assert news.at[0, "Assignment"] == "JC"
+    assert news.at[1, "Assignment"] == "SA"
 
 
 def test_report_sc_and_jc_do_not_overwrite_special_assignments(tmp_path: Path) -> None:
@@ -242,6 +264,22 @@ def test_verified_zone_changes_keep_the_carried_over_zone_order() -> None:
     )
     ordered = _restore_zone_order(news, ["IBESIKPO", "UYO", "UKAT-NSIT"])
     assert list(ordered["Name of Missionary"]) == ["ELDER ALPHA", "ELDER CHARLIE", "ELDER DELTA", "ELDER BRAVO"]
+
+
+def test_current_leadership_roles_print_first_and_keep_pairs_together() -> None:
+    from data.generate_transfer_sheet import _restore_zone_order
+
+    news = pd.DataFrame(
+        [
+            {"Name of Missionary": "ELDER AP2", "Assignment": "AP2", "Previous Zone": "UYO", "New/Existing Zone": "UYO", "_row_order": 1},
+            {"Name of Missionary": "ELDER SC", "Assignment": "SC", "Previous Zone": "UYO", "New/Existing Zone": "UYO", "_row_order": 2},
+            {"Name of Missionary": "ELDER AP1", "Assignment": "AP1", "Previous Zone": "UYO", "New/Existing Zone": "UYO", "_row_order": 9},
+            {"Name of Missionary": "ELDER ZL1", "Assignment": "ZL1", "Previous Zone": "UYO", "New/Existing Zone": "UYO", "_row_order": 3},
+        ]
+    )
+
+    ordered = _restore_zone_order(news, ["UYO"])
+    assert list(ordered["Name of Missionary"]) == ["ELDER AP1", "ELDER AP2", "ELDER ZL1", "ELDER SC"]
 
 
 def test_stats_count_a_trio_as_one_companionship(sample_news: pd.DataFrame) -> None:

@@ -27,8 +27,8 @@ training context:
     new junior -> TR
   - ZL/STL/AP pairs -> ZL1/ZL2, STL1/STL2, AP1/AP2
   - juniors -> JC (unless part of a ZL2/STL2/AP2/SA pair)
-  - SA (special assignment) is inherited from the previous news when the
-    pair carries no badge.
+  - SA (special assignment) comes only from the office's explicit current
+    transfer override, because Transfer Management does not publish SA.
 
 Consumed by data/generate_transfer_sheet.py when a previous_news_pdf is
 supplied.
@@ -880,17 +880,6 @@ def _group_assignments(area: AreaRecord) -> list[str]:
     else:
         assignments = ["SC"] + ["JC"] * len(juniors)
 
-    # SA (special assignment) never appears as a Transfer Management badge,
-    # so it carries over from the previous news. Everyone serving with an SA
-    # is also an SA — the whole companionship — except members whose badge
-    # names another calling (SC/JC only mark senior and junior). Exceptions
-    # are handled with a manual correction.
-    sa_eligible = [_norm(m.badge) in ("", "SC", "JC") for m in members]
-    sa_group = any(
-        ok and m.prev is not None and _norm(m.prev.assignment) == "SA"
-        for ok, m in zip(sa_eligible, members)
-    )
-
     for i, junior in enumerate(juniors, start=1):
         junior_trainee_marker = junior.has_t and junior.state != "matched"
         if junior.state == "masked" or junior_trainee_marker:
@@ -903,9 +892,6 @@ def _group_assignments(area: AreaRecord) -> list[str]:
             if assignments[0] == "DL":
                 assignments[0] = "DT"
             assignments[i] = "JC"
-
-    if sa_group:
-        assignments = ["SA" if ok else code for ok, code in zip(sa_eligible, assignments)]
 
     return assignments
 
@@ -1062,6 +1048,8 @@ def build_news_format(
                 "Previous Assignment": prev_assignment,
                 "_zone_order": group_order(group_zone or current_zone),
                 "_prev_tier": _leadership_tier(prev_assignment),
+                "_role_tier": assignment_sort_key(assignment)[0],
+                "_role_position": assignment_sort_key(assignment)[1],
                 "_row_order": row_order,
                 "_district": area.district,
             })
@@ -1071,28 +1059,41 @@ def build_news_format(
         logger.warning("News Format produced 0 rows — check PDF paths and parsing")
         return df, _build_changes(areas, prev, consumed), list(zone_first_seen)
 
-    # Within each zone: AP, ZL and STL companionships first — judged by the
-    # role held LAST transfer, then by each missionary's position in the
-    # previous news. This keeps former leaders in their historical spot
-    # (a JC who was ZL1 still prints above the ZL2 row) instead of re-sorting
-    # everyone by their current calling.
+    # Within each zone, current leadership companionships print first. Keep
+    # positional companions together and in role order (AP1 before AP2, then
+    # ZL1/ZL2, then STL1/STL2), rather than separating them by their position
+    # in the previous transfer's publication.
     df = df.sort_values(
-        ["_zone_order", "_prev_tier", "_row_order", "Name of Missionary"]
+        ["_zone_order", "_role_tier", "_role_position", "_row_order", "Name of Missionary"]
     ).reset_index(drop=True)
 
     changes = _build_changes(areas, prev, consumed)
     return df, changes, list(zone_first_seen)
 
 
-def _leadership_tier(assignment: str) -> int:
+def assignment_sort_key(assignment: str) -> tuple[int, int]:
+    """Return the printed within-zone order for a current assignment."""
     a = _norm(assignment)
-    if a.startswith("AP") or a == "SA":
-        return 0
-    if a.startswith("ZL"):
-        return 1
-    if a.startswith("STL"):
-        return 2
-    return 3
+    if a == "SA":
+        return (0, 0)
+    for tier, prefix in enumerate(("AP", "ZL", "STL")):
+        match = re.fullmatch(rf"{prefix}(\d*)", a)
+        if match:
+            return (tier, int(match.group(1) or "0"))
+    if a in {"DL", "DT"}:
+        return (3, 0)
+    if a == "TR":
+        return (4, 0)
+    if a == "SC":
+        return (5, 0)
+    if a == "JC":
+        return (6, 0)
+    return (7, 0)
+
+
+def _leadership_tier(assignment: str) -> int:
+    """Compatibility value retained in the review workbook."""
+    return assignment_sort_key(assignment)[0]
 
 
 def _build_changes(

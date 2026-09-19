@@ -57,6 +57,7 @@
             <label class="compact-upload"><span><strong>Word template</strong><small>DOCX with supported placeholders</small></span><input type="file" name="word_template" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
             <label class="compact-upload"><span><strong>Manual corrections</strong><small>CSV with Name, Field, Value</small></span><input type="file" name="manual_corrections" accept=".csv,text/csv"></label>
           </div>
+          <label class="full-textarea"><span><strong>Current special-assignment overrides</strong><small>Optional. One missionary per line: <code>Elder Erondu | JC</code> or <code>Elder Example | SA</code>. This is the office's authority for current SA or JC roles and overrides any uploaded corrections CSV.</small></span><textarea name="current_role_overrides" rows="4" maxlength="20000" placeholder="Elder Erondu | JC&#10;Elder Example | SA"></textarea></label>
           <div class="check-row">
             <label class="check-card"><input type="checkbox" name="include_roster" checked><span><strong>Create updated roster</strong><small>Recommended for the next transfer cycle</small></span></label>
             <label class="check-card"><input type="checkbox" name="include_stats" checked><span><strong>Create statistics</strong><small>Word and PDF summaries</small></span></label>

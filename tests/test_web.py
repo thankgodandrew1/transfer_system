@@ -40,6 +40,7 @@ def test_branding_links_creator_repository_and_favicon(monkeypatch, tmp_path: Pa
     assert b"ThankGod Andrew" in response.data
     assert b"https://github.com/thankgodandrew1/transfer_system" in response.data
     assert b"favicon.svg" in response.data
+    assert b"Current special-assignment overrides" in response.data
 
 
 def test_generation_rejects_expired_form(monkeypatch, tmp_path: Path) -> None:

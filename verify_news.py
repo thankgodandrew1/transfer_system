@@ -492,7 +492,7 @@ def verify(
 # For facts neither report captures correctly (e.g. a Special Assignment the
 # mission hasn't reflected in Transfer Management yet). Applied last, so it
 # can override even the ground-truth reports. CSV columns: Name,Field,Value —
-# Name matches by last name against "Name of Missionary"; Field is any News
+# Name may be a surname or the full printed missionary name; Field is any News
 # Format column name; Value replaces it verbatim.
 
 def _load_manual_corrections(path: Path) -> list[tuple[str, str, str]]:
@@ -519,7 +519,9 @@ def _apply_manual_corrections(df: pd.DataFrame, path: Path | None, corrections: 
             continue
         target_key = _norm_key(name)
         for idx in df.index:
-            if _norm_key(_last_name(df.at[idx, "Name of Missionary"])) != target_key:
+            display_key = _norm_key(str(df.at[idx, "Name of Missionary"]))
+            last_name_key = _norm_key(_last_name(df.at[idx, "Name of Missionary"]))
+            if target_key not in {display_key, last_name_key}:
                 continue
             old_value = str(df.at[idx, field])
             if old_value == value:

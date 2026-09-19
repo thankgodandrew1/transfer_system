@@ -19,7 +19,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from generate_transfer_sheet import extract_transfer_records  # noqa: E402
-from generate_news_format import generate_news_format  # noqa: E402
+from generate_news_format import assignment_sort_key, generate_news_format  # noqa: E402
 from verify_news import Issue, VerificationResult, verify  # noqa: E402
 
 
@@ -50,8 +50,11 @@ def _restore_zone_order(news: pd.DataFrame, zone_order: list[str]) -> pd.DataFra
     group_zone = news["Previous Zone"].fillna("").astype(str).str.strip()
     group_zone = group_zone.where(group_zone != "", news["New/Existing Zone"].astype(str))
     news["_zone_order"] = group_zone.str.upper().map(lambda zone: rank.get(zone, len(rank)))
+    role_keys = news.get("Assignment", pd.Series("", index=news.index)).map(assignment_sort_key)
+    news["_role_tier"] = role_keys.map(lambda item: item[0])
+    news["_role_position"] = role_keys.map(lambda item: item[1])
     return news.sort_values(
-        ["_zone_order", "_prev_tier", "_row_order", "Name of Missionary"], kind="stable"
+        ["_zone_order", "_role_tier", "_role_position", "_row_order", "Name of Missionary"], kind="stable"
     ).reset_index(drop=True)
 
 

@@ -120,6 +120,41 @@ def test_pdf_parser_rejoins_rows_split_across_pages(monkeypatch) -> None:
     ]
 
 
+def test_pdf_parser_rejoins_a_row_number_split_across_pages(monkeypatch) -> None:
+    header = ["#", "MISSIONARY", "ASSIGNMENT", "ZONE", "NEW/EXISTING AREA", "COMPANION(S)"]
+
+    class FakePage:
+        def __init__(self, table, text=""):
+            self._table = table
+            self._text = text
+
+        def extract_text(self, **_kwargs):
+            return self._text
+
+        def extract_tables(self):
+            return [self._table]
+
+    class FakePdf:
+        pages = [
+            FakePage([header, ["1", "ELDER", "JC", "ITAM-", "IKOT EKPENE ROAD", "ELDER AMANING"]]),
+            FakePage([header, ["5", "ZAKOURA", "", "NKEMBA", "", ""], ["16", "ELDER ALPHA", "JC", "UYO", "OLD AREA", "ELDER BETA"]]),
+        ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(movement_plan.pdfplumber, "open", lambda _source: FakePdf())
+    parsed = movement_plan.parse_transfer_pdf("split-row-number.pdf")
+
+    assert [(item.name, item.zone, item.area) for item in parsed.assignments] == [
+        ("ELDER ZAKOURA", "ITAM- NKEMBA", "IKOT EKPENE ROAD"),
+        ("ELDER ALPHA", "UYO", "OLD AREA"),
+    ]
+
+
 def test_json_directory_is_loaded_and_exported_as_excel_friendly_csv(tmp_path: Path) -> None:
     source = tmp_path / "apartments.json"
     source.write_text(

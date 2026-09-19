@@ -284,6 +284,63 @@ def _save_upload(field: str, destination: Path, kind: str, required: bool = True
     return destination
 
 
+def _parse_current_role_overrides(value: str) -> list[tuple[str, str]]:
+    """Read the concise per-transfer SA/JC authority list from the form."""
+    overrides: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for line_number, raw_line in enumerate(value.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "|" not in line:
+            raise ValueError(
+                f"Current role override line {line_number} must use: Missionary | SA or JC."
+            )
+        name, assignment = (part.strip() for part in line.split("|", 1))
+        assignment = assignment.upper()
+        key = re.sub(r"[^A-Z0-9]", "", name.upper())
+        if not name or not key or len(name) > 160:
+            raise ValueError(f"Current role override line {line_number} needs a valid missionary name.")
+        if assignment not in {"SA", "JC"}:
+            raise ValueError(
+                f"Current role override line {line_number} must set the assignment to SA or JC."
+            )
+        if key in seen:
+            raise ValueError(f'"{name}" appears more than once in current role overrides.')
+        seen.add(key)
+        overrides.append((name, assignment))
+    return overrides
+
+
+def _combine_corrections(
+    manual_corrections: Path | None,
+    current_role_overrides: list[tuple[str, str]],
+    destination: Path,
+) -> Path | None:
+    """Combine optional CSV corrections with final, authoritative SA/JC entries."""
+    if manual_corrections is None and not current_role_overrides:
+        return None
+
+    rows: list[tuple[str, str, str]] = []
+    if manual_corrections is not None:
+        with manual_corrections.open(newline="", encoding="utf-8-sig") as stream:
+            for entry in csv.DictReader(stream):
+                name = str(entry.get("Name", "")).strip()
+                field = str(entry.get("Field", "")).strip()
+                value = str(entry.get("Value", "")).strip()
+                if name and field:
+                    rows.append((name, field, value))
+
+    # These form entries are deliberately last: they are the office's
+    # explicit current-transfer authority and must win over a generic CSV.
+    rows.extend((name, "Assignment", assignment) for name, assignment in current_role_overrides)
+    with destination.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("Name", "Field", "Value"))
+        writer.writerows(rows)
+    return destination
+
+
 def _file_record(path: Path, label: str, kind: str) -> dict[str, Any]:
     return {
         "name": path.name,
@@ -347,7 +404,13 @@ def _run_generation(
     current_report = _save_upload("current_report", input_dir / "current_transfer_report.xlsx", "xlsx")
     old_report = _save_upload("old_report", input_dir / "old_transfer_report.xlsx", "xlsx")
     template = _save_upload("word_template", input_dir / "template.docx", "docx", required=False)
-    corrections = _save_upload("manual_corrections", input_dir / "manual_corrections.csv", "csv", required=False)
+    manual_corrections = _save_upload("manual_corrections", input_dir / "manual_corrections.csv", "csv", required=False)
+    role_overrides = _parse_current_role_overrides(values["current_role_overrides"])
+    corrections = _combine_corrections(
+        manual_corrections,
+        role_overrides,
+        input_dir / "combined_manual_corrections.csv",
+    )
 
     warning_handler = GenerationWarningHandler()
     warning_handler.setFormatter(logging.Formatter("%(message)s"))
@@ -713,6 +776,7 @@ def generate():
         "president": _form_text("president", DEFAULT_PRESIDENT, 120),
         "prepared_by": _form_text("prepared_by", DEFAULT_PREPARED_BY, 160),
         "transfer_title": _form_text("transfer_title", "", 120).upper(),
+        "current_role_overrides": _form_multiline("current_role_overrides", 20_000),
         "include_roster": request.form.get("include_roster") == "on",
         "include_stats": request.form.get("include_stats") == "on",
     }
