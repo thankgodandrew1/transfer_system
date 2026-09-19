@@ -28,9 +28,9 @@ Each browser run uses an isolated temporary folder. Files expire automatically a
 | Previous Transfer Report | XLSX | Authoritative previous-state and incoming-missionary verification |
 | Word template | DOCX, optional | Approved custom document layout |
 | Manual corrections | CSV, optional | Approved overrides with `Name,Field,Value` columns |
-| Current special-assignment overrides | Text, optional | Per-transfer authority for SA/JC roles, one line such as `Elder Erondu | JC` |
+| Current assignment overrides | Text, optional | Per-transfer authority for any current role, one line such as `Elder Erondu | DL` |
 
-Use **Current special-assignment overrides** whenever Transfer Management does not show a current SA role. List only the missionaries whose current role needs explicit confirmation. The entries are applied last, so `Elder Name | SA` confirms SA and `Elder Name | JC` explicitly releases a former SA to JC.
+Use **Current assignment overrides** whenever a missionary's role needs explicit confirmation. List only the missionaries whose current role differs from, or is not shown by, Transfer Management. The entries are applied last, so a former SA can be assigned `JC`, `SC`, `DL`, `ZL1`, or any supported role. Supported codes are `SA`, `AP`, `AP1`, `AP2`, `ZL`, `ZL1`, `ZL2`, `STL`, `STL1`, `STL2`, `DL`, `DT`, `TR`, `SC`, and `JC`.
 
 ## Outputs
 

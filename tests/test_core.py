@@ -196,7 +196,7 @@ def test_manual_assignment_correction_accepts_a_full_missionary_name(tmp_path: P
 
     corrections_file = tmp_path / "role-overrides.csv"
     corrections_file.write_text(
-        "Name,Field,Value\nElder Erondu,Assignment,JC\nElder Asamoah,Assignment,SA\n",
+        "Name,Field,Value\nElder Erondu,Assignment,DL\nElder Asamoah,Assignment,SA\n",
         encoding="utf-8",
     )
     news = pd.DataFrame(
@@ -209,7 +209,7 @@ def test_manual_assignment_correction_accepts_a_full_missionary_name(tmp_path: P
 
     verify_news._apply_manual_corrections(news, corrections_file, corrections)
 
-    assert news.at[0, "Assignment"] == "JC"
+    assert news.at[0, "Assignment"] == "DL"
     assert news.at[1, "Assignment"] == "SA"
 
 

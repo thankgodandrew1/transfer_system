@@ -284,8 +284,14 @@ def _save_upload(field: str, destination: Path, kind: str, required: bool = True
     return destination
 
 
+CURRENT_ASSIGNMENT_CODES = {
+    "SA", "AP", "AP1", "AP2", "ZL", "ZL1", "ZL2", "STL", "STL1", "STL2",
+    "DL", "DT", "TR", "SC", "JC",
+}
+
+
 def _parse_current_role_overrides(value: str) -> list[tuple[str, str]]:
-    """Read the concise per-transfer SA/JC authority list from the form."""
+    """Read the office's authoritative current-assignment list from the form."""
     overrides: list[tuple[str, str]] = []
     seen: set[str] = set()
     for line_number, raw_line in enumerate(value.splitlines(), start=1):
@@ -294,19 +300,19 @@ def _parse_current_role_overrides(value: str) -> list[tuple[str, str]]:
             continue
         if "|" not in line:
             raise ValueError(
-                f"Current role override line {line_number} must use: Missionary | SA or JC."
+                f"Current assignment override line {line_number} must use: Missionary | Assignment."
             )
         name, assignment = (part.strip() for part in line.split("|", 1))
         assignment = assignment.upper()
         key = re.sub(r"[^A-Z0-9]", "", name.upper())
         if not name or not key or len(name) > 160:
-            raise ValueError(f"Current role override line {line_number} needs a valid missionary name.")
-        if assignment not in {"SA", "JC"}:
+            raise ValueError(f"Current assignment override line {line_number} needs a valid missionary name.")
+        if assignment not in CURRENT_ASSIGNMENT_CODES:
             raise ValueError(
-                f"Current role override line {line_number} must set the assignment to SA or JC."
+                f"Current assignment override line {line_number} has an unsupported role: {assignment}."
             )
         if key in seen:
-            raise ValueError(f'"{name}" appears more than once in current role overrides.')
+            raise ValueError(f'"{name}" appears more than once in current assignment overrides.')
         seen.add(key)
         overrides.append((name, assignment))
     return overrides
@@ -317,7 +323,7 @@ def _combine_corrections(
     current_role_overrides: list[tuple[str, str]],
     destination: Path,
 ) -> Path | None:
-    """Combine optional CSV corrections with final, authoritative SA/JC entries."""
+    """Combine optional CSV corrections with final, authoritative role entries."""
     if manual_corrections is None and not current_role_overrides:
         return None
 
