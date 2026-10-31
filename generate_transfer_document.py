@@ -428,13 +428,13 @@ def add_zone_table(document: Document, zone_number: int, zone: str, rows: pd.Dat
     name_run = title_para.add_run(f"{zone.upper()} ZONE")
     name_run.bold = True
     name_run.font.name = FONT_NAME
-    name_run.font.size = Pt(11)
+    name_run.font.size = Pt(12)
     name_run.font.color.rgb = RGBColor.from_string(BANNER_GREEN)
     _set_char_spacing(name_run, 20)
     tail_run = title_para.add_run(f"   ·   {len(rows)} missionaries")
     tail_run.italic = True
     tail_run.font.name = FONT_NAME
-    tail_run.font.size = Pt(7)
+    tail_run.font.size = Pt(12)
     tail_run.font.color.rgb = RGBColor.from_string(MUTED_GRAY)
 
     _set_fixed_table(divider, [700, 13500], margins=(95, 100))
@@ -449,7 +449,8 @@ def add_zone_table(document: Document, zone_number: int, zone: str, rows: pd.Dat
     # wraps badly at the original 1100 DXA, so it borrows width from
     # COMPANION(S), which has room to spare.
     headers = ["#", "MISSIONARY", "ASSIGNMENT", "ZONE", "NEW/EXISTING AREA", "COMPANION(S)"]
-    widths_dxa = [440, 2250, 2350, 1800, 3500, 3860]
+    # widths_dxa = [440, 2250, 2350, 1800, 3500, 3860]
+    widths_dxa = [440, 3300, 950, 2550, 3500, 3460]
     left = WD_ALIGN_PARAGRAPH.LEFT
     aligns = [None, left, None, None, left, left]
 
@@ -1133,11 +1134,11 @@ def build_running_header_footer(
         run.text = ""
     _set_three_part_tabs(header_para, section)
     set_paragraph_shading(header_para, BANNER_GREEN)
-    _small_run(header_para, mission_name.upper(), "FFFFFF", bold=True, size=8.5, font=HEADER_FOOTER_FONT)
+    _small_run(header_para, mission_name.upper(), "FFFFFF", bold=True, size=12.5, font=HEADER_FOOTER_FONT)
     header_para.add_run("\t")
-    _small_run(header_para, transfer_title.replace(" TRANSFER NEWS", "  ·  TRANSFER NEWS"), ACCENT_GOLD, bold=True, size=8.5, font=HEADER_FOOTER_FONT)
+    _small_run(header_para, transfer_title.replace(" TRANSFER NEWS", "  ·  TRANSFER NEWS"), ACCENT_GOLD, bold=True, size=12.5, font=HEADER_FOOTER_FONT)
     header_para.add_run("\t")
-    _small_run(header_para, "All Zones", "FFFFFF", italic=True, size=6.5, font=HEADER_FOOTER_FONT)
+    _small_run(header_para, "All Zones", "FFFFFF", italic=True, size=10.5, font=HEADER_FOOTER_FONT)
     add_watermark(
         header_para, WATERMARK_SIZE_IN,
         WATERMARK_ZONE_CENTER_X_IN, WATERMARK_ZONE_CENTER_Y_IN,
@@ -1149,12 +1150,12 @@ def build_running_header_footer(
     for run in list(footer_para.runs):
         run.text = ""
     _set_three_part_tabs(footer_para, section)
-    _set_paragraph_top_border(footer_para, BANNER_GREEN, size=8)
-    _small_run(footer_para, "STRICTLY CONFIDENTIAL — Mission Use Only", MUTED_GRAY, italic=True, size=6, font=HEADER_FOOTER_FONT)
+    _set_paragraph_top_border(footer_para, BANNER_GREEN, size=12)
+    _small_run(footer_para, "STRICTLY CONFIDENTIAL — Mission Use Only", MUTED_GRAY, italic=True, size=12, font=HEADER_FOOTER_FONT)
     footer_para.add_run("\t")
-    _small_run(footer_para, f"{president.title()}  ·  {mission_name.title()}", BANNER_GREEN, bold=True, size=6, font=HEADER_FOOTER_FONT)
+    _small_run(footer_para, f"{president.title()}  ·  {mission_name.title()}", BANNER_GREEN, bold=True, size=12, font=HEADER_FOOTER_FONT)
     footer_para.add_run("\t")
-    _small_run(footer_para, "Page ", MUTED_GRAY, size=6, font=HEADER_FOOTER_FONT)
+    _small_run(footer_para, "Page ", MUTED_GRAY, size=12, font=HEADER_FOOTER_FONT)
     _add_page_number(footer_para)
 
 
