@@ -448,9 +448,9 @@ def add_zone_table(document: Document, zone_number: int, zone: str, rows: pd.Dat
     # 3500, 5110]. "ASSIGNMENT" is wider than the design source's "ROLE" and
     # wraps badly at the original 1100 DXA, so it borrows width from
     # COMPANION(S), which has room to spare.
-    headers = ["#", "MISSIONARY", "ASSIGNMENT", "ZONE", "NEW/EXISTING AREA", "COMPANION(S)"]
+    headers = ["#", "MISSIONARY", "ROLE", "ZONE", "NEW/EXISTING AREA", "COMPANION(S)"]
     # widths_dxa = [440, 2250, 2350, 1800, 3500, 3860]
-    widths_dxa = [440, 3300, 950, 2550, 3500, 3460]
+    widths_dxa = [490, 3300, 950, 2550, 3500, 3410]
     left = WD_ALIGN_PARAGRAPH.LEFT
     aligns = [None, left, None, None, left, left]
 
