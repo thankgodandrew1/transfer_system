@@ -32,7 +32,7 @@ from pathlib import Path
 import openpyxl
 import pandas as pd
 
-from generate_news_format import MissionaryRecord, _classify
+from generate_news_format import MissionaryRecord, _classify, _is_new_missionary_text
 
 
 def _norm_key(text: str) -> str:
@@ -139,7 +139,7 @@ def load_report(path: Path) -> list[ReportRecord]:
             area=_clean_place(row[idx["Area"]]),
             full_name=name,
             last=last,
-            title="SISTER" if type_raw.startswith("SISTER") else "ELDER",
+            title="SISTER" if type_raw.startswith("SISTER") else ("ELDER" if type_raw else ""),
             position=_normalize_position(row[idx["Position"]]),
             companions=_split_report_companions(row[idx["Companion"]]),
             prior_area=_clean_place(prior_area) if prior_area else None,
@@ -178,11 +178,13 @@ class VerificationResult:
 
 def _last_name(display_name: str) -> str:
     parts = str(display_name).split()
+    if parts and parts[0].upper() in ("ELDER", "ELDERS", "SISTER", "SISTERS"):
+        parts = parts[1:]
     # Strip a trailing first-initial disambiguator ("OKON P." -> "OKON").
     if parts and re.fullmatch(r"[A-Z]\.", parts[-1]):
         parts = parts[:-1]
-    last = parts[-1] if parts else ""
-    return last.split(".")[0]
+    # Keep every remaining word: a last name can be "COLLINS JR".
+    return " ".join(parts).split(".")[0]
 
 
 def _display_name(rec: "ReportRecord", dup_last_names: set[str], confirmed_new_fullnames: set[str]) -> str:
@@ -369,6 +371,16 @@ def verify(
                 df.at[idx, "Name of Missionary"] = expected_name
                 row_name = expected_name
 
+        # Title: the previous news can carry a wrong ELDER/SISTER forward, and
+        # the companion cells above already print the report's title.
+        first_word, _, rest = str(row_name).partition(" ")
+        if rest and rec.title and first_word in ("ELDER", "SISTER") and first_word != rec.title:
+            corrected_name = f"{rec.title} {rest}"
+            corrections.append(Correction(row_name, "Name of Missionary", row_name, corrected_name,
+                                           "current_transfer_report.xlsx Type"))
+            df.at[idx, "Name of Missionary"] = corrected_name
+            row_name = corrected_name
+
         # Previous state, via old_transfer_report.xlsx chained by exact full name.
         old_rec = old_by_fullname.get(_norm_key(rec.full_name))
         if old_rec is not None:
@@ -440,6 +452,35 @@ def verify(
     # direction too — every current missionary who isn't masked as new must
     # own exactly one row. Without the old report, masked new missionaries
     # can't be told apart from missing ones, so the check needs it.
+    wrongly_masked: list[ReportRecord] = []
+
+    def masked_slot_of(rec: ReportRecord) -> int | None:
+        """The row whose companion cell shows rec as NEW MISSIONARY. Everyone
+        checked here is named in old_transfer_report.xlsx, so that mask is the
+        parser's mistake: a former AP or other leader going to the field whose
+        previous-news name it couldn't match, or a trainee who changed areas."""
+        key = _norm_key(rec.full_name)
+        companions = {_norm_key(c) for c in rec.companions}
+        for idx, mate in idx_to_rec.items():
+            linked = _norm_key(mate.full_name) in companions or key in {_norm_key(c) for c in mate.companions}
+            if linked and _is_new_missionary_text(news.at[idx, "New/Existing Companion(s)"]):
+                return idx
+        return None
+
+    def undo_trainer_promotion(rec: ReportRecord, mate_idx: int) -> None:
+        """The parser made the senior a trainer because of that mask. A former
+        leader isn't a trainee, so unless the senior also has a confirmed-new
+        companion they go back to the position the report gives them."""
+        mate = idx_to_rec[mate_idx]
+        trainee = old_by_fullname[_norm_key(rec.full_name)].position in ("JC", "")
+        training = any(_norm_key(c) in confirmed_new_fullnames for c in mate.companions)
+        current = str(df.at[mate_idx, "Assignment"])
+        if not trainee and not training and current in ("TR", "DT") and mate.position in ("SC", "DL", ""):
+            restored = mate.position or "SC"
+            corrections.append(Correction(str(df.at[mate_idx, "Name of Missionary"]), "Assignment", current, restored,
+                                           f"not training {rec.full_name}, who is not a new missionary"))
+            df.at[mate_idx, "Assignment"] = restored
+
     if old_records:
         rows_per_rec: dict[int, int] = {}
         for rec in idx_to_rec.values():
@@ -447,7 +488,11 @@ def verify(
         for rec in named_current:
             count = rows_per_rec.get(id(rec), 0)
             where = f"{strip_zone_suffix(rec.zone)} / {rec.area}"
-            if count == 0:
+            masked_slot = masked_slot_of(rec) if count == 0 else None
+            if masked_slot is not None:
+                wrongly_masked.append(rec)
+                undo_trainer_promotion(rec, masked_slot)
+            elif count == 0:
                 result.blocking_errors.append(Issue(
                     _display_name(rec, dup_last_names, confirmed_new_fullnames),
                     f"{rec.full_name} ({where}) is in current_transfer_report.xlsx but has no row in the "
@@ -481,6 +526,48 @@ def verify(
             ))
         df = df.drop(index=confirmed_new_idx).reset_index(drop=True)
         result.news = df
+
+    # Give each wrongly masked missionary the row they should have had, built
+    # from the reports. This runs before the manual overrides so that an office
+    # entry such as "Elder Example | JC" has a row to act on.
+    for rec in wrongly_masked:
+        old_rec = old_by_fullname[_norm_key(rec.full_name)]
+        name = _display_name(rec, dup_last_names, confirmed_new_fullnames)
+        zone = strip_zone_suffix(rec.zone).upper()
+        area = rec.area.upper()
+        old_zone = strip_zone_suffix(old_rec.zone).upper()
+        status, _ = _classify(
+            MissionaryRecord(
+                display_name=rec.full_name, title="", last_name=rec.last, assignment=old_rec.position,
+                section_zone="", assigned_zone=old_zone, area=old_rec.area or "", companion="",
+            ),
+            zone, area, rec.position,
+        )
+        row: dict[str, object] = dict.fromkeys(df.columns, "")
+        row.update({
+            "Name of Missionary": name,
+            "Assignment": rec.position,
+            "New/Existing Zone": zone,
+            "New/Existing Area": area,
+            "New/Existing Companion(s)": " & ".join(dict.fromkeys(
+                _display_name(current_by_fullname[_norm_key(c)], dup_last_names, confirmed_new_fullnames)
+                if _norm_key(c) in current_by_fullname
+                else c.split(",")[0].strip().upper()
+                for c in rec.companions
+            )),
+            "Status": status,
+            "Previous Zone": old_zone,
+            "Previous Area": (old_rec.area or "").upper(),
+            "Previous Assignment": old_rec.position,
+        })
+        if "_row_order" in df.columns:
+            row["_row_order"] = 10 ** 9
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+        corrections.append(Correction(
+            name, "(row)", "masked as NEW MISSIONARY", "row added from the reports",
+            "named in old_transfer_report.xlsx, so this missionary is not new",
+        ))
+    result.news = df
 
     _apply_manual_corrections(df, manual_corrections_path, corrections)
 

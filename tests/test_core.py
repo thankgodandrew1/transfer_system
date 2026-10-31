@@ -6,6 +6,7 @@ from pathlib import Path
 
 import openpyxl
 import pandas as pd
+import pytest
 from pypdf import PdfReader
 
 import generate_news_format
@@ -308,3 +309,161 @@ def test_native_pdf_and_docx_outputs_are_structurally_valid(sample_workbook: Pat
     assert {"News Format", "Transfer Sheet", "Meta"}.issubset(document.sheetnames)
     document.close()
     assert news_docx.exists() and news_docx.stat().st_size > 10_000
+
+
+# ── Missionaries who are not new must never be masked ───────────────────────
+
+_REPORT_HEADERS = ["Zone", "District", "Area", "Missionary Name", "Type", "Position", "Companion"]
+_NEWS_COLUMNS = [
+    "Name of Missionary", "Assignment", "New/Existing Zone", "New/Existing Area",
+    "New/Existing Companion(s)", "Status", "Previous Zone", "Previous Area", "Previous Assignment",
+]
+
+
+def _write_report(path: Path, rows: list[list[str]]) -> Path:
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(_REPORT_HEADERS)
+    for row in rows:
+        sheet.append(row)
+    workbook.save(path)
+    return path
+
+
+def test_former_ap_sent_to_the_field_gets_a_row_and_takes_an_override(tmp_path: Path) -> None:
+    # The parser could not match the AP, so it masked him and made his new
+    # senior a trainer. The old report proves he is not new.
+    news = pd.DataFrame(
+        [["ELDER SENIOR", "TR", "UKAT-NSIT", "EKPENU AKEM", "NEW MISSIONARY", "STAYING", "UKAT-NSIT", "EKPENU AKEM", "JC"]],
+        columns=_NEWS_COLUMNS,
+    )
+    current = _write_report(tmp_path / "current.xlsx", [
+        ["Ukat-Nsit Zone", "Ukat-Nsit", "Ekpenu Akem", "Senior, Sam", "Elder", "(SC)", "Formerap, Fred (JC)"],
+        ["Ukat-Nsit Zone", "Ukat-Nsit", "Ekpenu Akem", "Formerap, Fred", "Elder", "(JC)", "Senior, Sam (SC)"],
+    ])
+    old = _write_report(tmp_path / "old.xlsx", [
+        ["Ukat-Nsit Zone", "Ukat-Nsit", "Ekpenu Akem", "Senior, Sam", "Elder", "(JC)", ""],
+        ["Uyo Central Zone", "Offot", "Offot East", "Formerap, Fred", "Elder", "(AP)", ""],
+    ])
+    overrides = tmp_path / "corrections.csv"
+    overrides.write_text("Name,Field,Value\nElder Formerap,Assignment,SC\n", encoding="utf-8")
+
+    result = verify(news, current, old, manual_corrections_path=overrides)
+
+    assert result.blocking_errors == []
+    rows = result.news.set_index("Name of Missionary")
+    assert rows.at["ELDER FORMERAP", "New/Existing Zone"] == "UKAT-NSIT"
+    assert rows.at["ELDER FORMERAP", "Previous Area"] == "OFFOT EAST"
+    assert rows.at["ELDER FORMERAP", "Status"] == "ZONE TRANSFER - RELEASED FROM LEADERSHIP"
+    assert rows.at["ELDER FORMERAP", "Assignment"] == "SC"  # the office override landed
+    assert rows.at["ELDER SENIOR", "Assignment"] == "SC"  # no longer a false trainer
+    assert rows.at["ELDER SENIOR", "New/Existing Companion(s)"] == "ELDER FORMERAP"
+
+
+def test_trainee_who_changed_areas_is_revealed_not_blocked(tmp_path: Path) -> None:
+    news = pd.DataFrame(
+        [["SISTER TRAINER", "TR", "IKOT USEKONG", "IKOT USEKONG", "NEW MISSIONARY", "STAYING", "IKOT USEKONG", "IKOT USEKONG", "SC"]],
+        columns=_NEWS_COLUMNS,
+    )
+    current = _write_report(tmp_path / "current.xlsx", [
+        ["Ikot Usekong Zone", "Usekong", "Ikot Usekong", "Trainer, Tia", "Sister", "(SC)", "Moved, Mia (JC)"],
+        ["Ikot Usekong Zone", "Usekong", "Ikot Usekong", "Moved, Mia", "Sister", "(JC)", "Trainer, Tia (SC)"],
+    ])
+    old = _write_report(tmp_path / "old.xlsx", [
+        ["Ikot Usekong Zone", "Usekong", "Ikot Usekong", "Trainer, Tia", "Sister", "(SC)", ""],
+        ["Uyo Zone", "Ewet", "Ewet Housing East", "Moved, Mia", "Sister", "(JC)", ""],
+    ])
+
+    result = verify(news, current, old, manual_corrections_path=tmp_path / "none.csv")
+
+    assert result.blocking_errors == []
+    rows = result.news.set_index("Name of Missionary")
+    assert rows.at["SISTER MOVED", "Status"] == "ZONE TRANSFER"
+    assert rows.at["SISTER MOVED", "Previous Area"] == "EWET HOUSING EAST"
+    assert rows.at["SISTER TRAINER", "Assignment"] == "TR"  # still finishing the training
+
+
+def test_genuinely_new_missionary_stays_masked(tmp_path: Path) -> None:
+    news = pd.DataFrame(
+        [["ELDER SENIOR", "TR", "ETINAN", "NDON UTIM", "NEW MISSIONARY", "STAYING", "ETINAN", "NDON UTIM", "JC"]],
+        columns=_NEWS_COLUMNS,
+    )
+    current = _write_report(tmp_path / "current.xlsx", [
+        ["Etinan Zone", "Etinan", "Ndon Utim", "Senior, Sam", "Elder", "(SC)", "Newly, Ned (JC)"],
+        ["Etinan Zone", "Etinan", "Ndon Utim", "Newly, Ned", "Elder", "(JC)", "Senior, Sam (SC)"],
+    ])
+    old = _write_report(tmp_path / "old.xlsx", [
+        ["Etinan Zone", "Etinan", "Ndon Utim", "Senior, Sam", "Elder", "(JC)", ""],
+    ])
+
+    result = verify(news, current, old, manual_corrections_path=tmp_path / "none.csv")
+
+    assert result.blocking_errors == []
+    assert result.new_missionary_count == 1
+    assert list(result.news["Name of Missionary"]) == ["ELDER SENIOR"]
+    assert result.news.at[0, "New/Existing Companion(s)"] == "NEW MISSIONARY"
+    assert result.news.at[0, "Assignment"] == "TR"
+
+
+def test_missing_missionary_with_no_masked_slot_still_blocks(tmp_path: Path) -> None:
+    news = pd.DataFrame(
+        [["ELDER SENIOR", "SC", "ETINAN", "NDON UTIM", "ELDER PARTNER", "STAYING", "ETINAN", "NDON UTIM", "SC"]],
+        columns=_NEWS_COLUMNS,
+    )
+    rows = [
+        ["Etinan Zone", "Etinan", "Ndon Utim", "Senior, Sam", "Elder", "(SC)", "Partner, Pat (JC)"],
+        ["Etinan Zone", "Etinan", "Ndon Utim", "Partner, Pat", "Elder", "(JC)", "Senior, Sam (SC)"],
+    ]
+    current = _write_report(tmp_path / "current.xlsx", rows)
+    old = _write_report(tmp_path / "old.xlsx", rows)
+
+    result = verify(news, current, old, manual_corrections_path=tmp_path / "none.csv")
+
+    assert [e.row_name for e in result.blocking_errors] == ["ELDER PARTNER"]
+
+
+def test_last_name_with_a_suffix_is_verified(tmp_path: Path) -> None:
+    news = pd.DataFrame(
+        [["ELDER COLLINS JR", "JC", "ETINAN NORTH", "AFAHA NSIT", "ELDER OWINO", "STAYING", "ETINAN NORTH", "AFAHA NSIT", ""]],
+        columns=_NEWS_COLUMNS,
+    )
+    rows = [["Etinan North Zone", "Afaha", "Afaha Nsit", "Collins Jr, Michael", "Elder", "(JC)", ""]]
+    report = _write_report(tmp_path / "current.xlsx", rows)
+    old = _write_report(tmp_path / "old.xlsx", rows)
+
+    result = verify(news, report, old, manual_corrections_path=tmp_path / "none.csv")
+
+    assert result.blocking_errors == []
+    assert result.news.at[0, "Previous Assignment"] == "JC"
+
+
+def test_row_title_comes_from_the_report(tmp_path: Path) -> None:
+    news = pd.DataFrame(
+        [["ELDER KPANA", "JC", "ORON", "EYO ABASI", "", "STAYING", "ORON", "EYO ABASI", "JC"]],
+        columns=_NEWS_COLUMNS,
+    )
+    rows = [["Oron Zone", "Oron", "Eyo Abasi", "Kpana, Isata", "Sister", "(JC)", ""]]
+    report = _write_report(tmp_path / "current.xlsx", rows)
+    old = _write_report(tmp_path / "old.xlsx", rows)
+
+    result = verify(news, report, old, manual_corrections_path=tmp_path / "none.csv")
+
+    assert list(result.news["Name of Missionary"]) == ["SISTER KPANA"]
+
+
+@pytest.mark.parametrize("printed", ["EDISON -MUDOR", "EDISON- MUDOR", "EDI SON-MUDOR"])
+def test_name_wrapped_by_the_previous_pdf_still_matches(printed: str) -> None:
+    rec = generate_news_format.MissionaryRecord(
+        display_name=f"ELDER {printed}", title="ELDER", last_name=printed, assignment="AP1",
+        section_zone="UYO CENTRAL", assigned_zone="UYO CENTRAL", area="OFFOT EAST", companion="ELDER ANDREW",
+    )
+    senior = generate_news_format.TMMissionary(name="Okongwu", x=0.0)
+    junior = generate_news_format.TMMissionary(name="Edison-Mudor", x=100.0)
+    area = generate_news_format.AreaRecord(zone="UKAT-NSIT", district="UKAT-NSIT", area="Ekpenu Akem", members=[senior, junior])
+
+    news, _, _ = generate_news_format.build_news_format([area], {printed: [rec]})
+
+    row = news[news["Name of Missionary"].str.contains("MUDOR")].iloc[0]
+    assert row["Name of Missionary"] == "ELDER EDISON-MUDOR"  # no PDF line wrap in print
+    assert row["Previous Assignment"] == "AP1"
+    assert row["Status"].startswith("ZONE TRANSFER")

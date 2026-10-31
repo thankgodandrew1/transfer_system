@@ -705,7 +705,7 @@ def _candidate_keys(name: str, prev: dict[str, list[MissionaryRecord]], base_ind
     keys = []
     if key in prev:
         keys.append(key)
-    for other in base_index.get(_base_name(key), []):
+    for other in base_index.get(_norm_key(_base_name(key)), []):
         if other != key:
             keys.append(other)
     return keys
@@ -723,8 +723,11 @@ def _match_all(
     returns the ids of the consumed previous records (unconsumed records
     belong to missionaries no longer in the mission)."""
     base_index: dict[str, list[str]] = defaultdict(list)
+    # Keyed without spaces or hyphens: a narrow PDF cell can wrap a long name
+    # anywhere ("EDISON -MUDOR", "GUELA SSIEMON"), and that must not make a
+    # returning missionary look brand new.
     for key in prev:
-        base_index[_base_name(key)].append(key)
+        base_index[_norm_key(_base_name(key))].append(key)
 
     consumed: set[int] = set()
     people: list[tuple[TMMissionary, AreaRecord, bool]] = []
@@ -754,7 +757,7 @@ def _match_all(
             continue
         area_hits = [r for r in candidates(person) if _area_match(r.area, area.area)]
         if area_hits:
-            exact = [r for r in area_hits if _norm(r.last_name) == _norm(person.name)]
+            exact = [r for r in area_hits if _norm_key(r.last_name) == _norm_key(person.name)]
             take(person, (exact or area_hits)[0])
 
     # Pass B/C: remaining candidates, preferring exact key and zone agreement.
@@ -766,7 +769,7 @@ def _match_all(
             continue
 
         def score(rec: MissionaryRecord) -> tuple[int, int]:
-            exact = int(_norm(rec.last_name) == _norm(person.name))
+            exact = int(_norm_key(rec.last_name) == _norm_key(person.name))
             prev_zone = rec.assigned_zone or _canon_zone(rec.section_zone)
             zone_hit = int(bool(prev_zone) and prev_zone == area.zone)
             return (exact, zone_hit)
@@ -988,6 +991,8 @@ def build_news_format(
             return "NEW MISSIONARY"
         if person.prev is not None and person.state == "matched":
             last = person.prev.last_name
+            if _norm_key(last) == _norm_key(person.name):
+                last = _norm(person.name)  # never print a PDF line wrap
             if "." in last and base_counts.get(_base_name(_norm(last)), 0) <= 1:
                 last = _base_name(last)
             return f"{person.prev.title} {last}"
