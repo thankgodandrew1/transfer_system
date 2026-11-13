@@ -56,7 +56,18 @@ def test_real_inputs_generate_full_web_package(monkeypatch, tmp_path: Path) -> N
     assert len(manifests) == 1
     manifest = json.loads(manifests[0].read_text(encoding="utf-8"))
     assert manifest["status"] == "complete", manifest.get("error")
-    assert manifest["summary"]["new_missionaries"] == 16
+    # These confidential fixtures are replaced each transfer. Derive the
+    # expected arrivals from their source names rather than an old cycle's count.
+    def roster_names(path):
+        workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+        try:
+            sheet = workbook.worksheets[0]
+            headers = [str(value or "").strip() for value in next(sheet.iter_rows(values_only=True))]
+            column = headers.index("Missionary Name")
+            return {str(row[column]).strip().upper() for row in sheet.iter_rows(min_row=2, values_only=True) if row[column]}
+        finally:
+            workbook.close()
+    assert manifest["summary"]["new_missionaries"] == len(roster_names(inputs["current_report"]) - roster_names(inputs["old_report"]))
     assert manifest["summary"]["blocking"] == 0
     kinds = {item["kind"] for item in manifest["files"]}
     assert {"zip", "xlsx", "csv", "log", "docx", "pdf"}.issubset(kinds)
@@ -85,7 +96,7 @@ def test_real_inputs_generate_full_web_package(monkeypatch, tmp_path: Path) -> N
     assert document.sections[0].orientation == WD_ORIENT.LANDSCAPE
     assert len(document.tables) >= 12
     document_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
-    assert "AUGUST 2026 TRANSFER NEWS" in document_text
+    assert "TRANSFER NEWS" in document_text
     assert "{{" not in document_text
 
 

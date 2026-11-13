@@ -36,7 +36,8 @@ from generate_news_format import MissionaryRecord, _classify, _is_new_missionary
 
 
 def _norm_key(text: str) -> str:
-    return re.sub(r"[^A-Z0-9]", "", str(text or "").upper())
+    from text_utils import comparison_key
+    return comparison_key(text)
 
 
 def _area_match(a: str, b: str) -> bool:
@@ -87,13 +88,16 @@ def _normalize_position(raw: object) -> str:
     if len(parts) == 1:
         return parts[0]
     family, role = parts[0], parts[1]
-    if family == "DL" and role == "TR":
+    if family == "DL" and role == "TR" and len(parts) == 2:
         return "DT"
     if role == "TR":
-        return "TR"
+        return "TR" if family == "SC" and len(parts) == 2 else "/".join(parts)
     if family in ("ZL", "STL", "AP"):
-        return family  # bare family; report doesn't record which numbered slot
-    return family
+        if role in ("SC", "JC") and len(parts) == 2:
+            return family  # legacy numbered-pair notation
+    if family in ("DL", "DT", "SC", "JC") and role in ("SC", "JC") and len(parts) == 2:
+        return family
+    return "/".join(parts)
 
 
 def _split_report_companions(raw: object) -> list[str]:
@@ -120,31 +124,61 @@ def _clean_place(raw: object) -> str:
 
 def load_report(path: Path) -> list[ReportRecord]:
     wb = openpyxl.load_workbook(str(path), data_only=True)
-    ws = wb[wb.sheetnames[0]]
-    headers = [str(c.value or "").strip() for c in ws[1]]
-    idx = {h: i for i, h in enumerate(headers)}
+    try:
+        return _read_report(wb, path)
+    finally:
+        wb.close()
+
+
+def _read_report(wb, path: Path) -> list[ReportRecord]:
+    required = {"missionary name", "zone", "area", "position", "companion"}
+    selected = None
+    for sheet in wb.worksheets:
+        for number, row in enumerate(sheet.iter_rows(max_row=20, values_only=True), start=1):
+            header = {re.sub(r"\s+", " ", str(value or "")).strip().casefold(): i for i, value in enumerate(row)}
+            if required <= header.keys():
+                selected = sheet, number, header
+                break
+        if selected:
+            break
+    if selected is None:
+        raise ValueError(f'{path.name}: no roster table was found. Export a Transfer Management Excel report with Missionary Name, Zone, Area, Position and Companion columns.')
+    ws, header_row, lower_idx = selected
+    idx = {name: lower_idx[name.casefold()] for name in (
+        "Missionary Name", "Zone", "Area", "Position", "Companion",
+        "District", "Type", "Area Prior To Change", "Position Prior To Change",
+    ) if name.casefold() in lower_idx}
 
     records: list[ReportRecord] = []
-    for row in ws.iter_rows(min_row=2, values_only=True):
+    seen = set()
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
         name = str(row[idx["Missionary Name"]] or "").strip()
         if not name:
             continue
+        key = _norm_key(name)
+        if key in seen:
+            raise ValueError(f'{path.name}: "{name}" appears more than once. Export a roster containing one row per missionary, or distinguish identical names before uploading.')
+        seen.add(key)
+        if not _clean_place(row[idx["Zone"]]) or not _clean_place(row[idx["Area"]]):
+            raise ValueError(f'{path.name}: "{name}" is missing a zone or area. Complete that assignment in the roster and upload it again.')
         last = name.split(",")[0].strip()
         prior_area = row[idx["Area Prior To Change"]] if "Area Prior To Change" in idx else None
         prior_pos_raw = row[idx["Position Prior To Change"]] if "Position Prior To Change" in idx else None
         type_raw = str(row[idx["Type"]] or "").strip().upper() if "Type" in idx else ""
         records.append(ReportRecord(
             zone=_clean_place(row[idx["Zone"]]),
-            district=_clean_place(row[idx["District"]]),
+            district=_clean_place(row[idx["District"]]) if "District" in idx else "",
             area=_clean_place(row[idx["Area"]]),
             full_name=name,
             last=last,
-            title="SISTER" if type_raw.startswith("SISTER") else ("ELDER" if type_raw else ""),
+            title="SISTER" if type_raw.startswith("SISTER") else ("ELDER" if type_raw.startswith("ELDER") else ""),
             position=_normalize_position(row[idx["Position"]]),
             companions=_split_report_companions(row[idx["Companion"]]),
             prior_area=_clean_place(prior_area) if prior_area else None,
             prior_position=_normalize_position(prior_pos_raw) if prior_pos_raw else None,
         ))
+    if not records:
+        raise ValueError(f'{path.name}: the roster has no missionaries. Upload the populated Transfer Management report.')
     return records
 
 
@@ -284,7 +318,7 @@ def verify(
             return True
         # Report only numbers the "#1" of a leadership pair; the "#2+" slot
         # prints as the bare family name.
-        if r and r == _family(r) and _family(n) == r and n != r:
+        if r in ("AP", "ZL", "STL") and re.fullmatch(re.escape(r) + r"\d+", str(news_code).strip().upper()):
             return True
         # current_transfer_report.xlsx has no TR/DT vocabulary at all — it
         # can only ever say "SC" or "DL" for someone actively training a
@@ -489,17 +523,10 @@ def verify(
             count = rows_per_rec.get(id(rec), 0)
             where = f"{strip_zone_suffix(rec.zone)} / {rec.area}"
             masked_slot = masked_slot_of(rec) if count == 0 else None
-            if masked_slot is not None:
+            if count == 0:
                 wrongly_masked.append(rec)
-                undo_trainer_promotion(rec, masked_slot)
-            elif count == 0:
-                result.blocking_errors.append(Issue(
-                    _display_name(rec, dup_last_names, confirmed_new_fullnames),
-                    f"{rec.full_name} ({where}) is in current_transfer_report.xlsx but has no row in the "
-                    "Transfer News — either the Transfer Management PDF was not read completely or this "
-                    "missionary was wrongly treated as new.",
-                    "blocking",
-                ))
+                if masked_slot is not None:
+                    undo_trainer_promotion(rec, masked_slot)
             elif count > 1:
                 result.blocking_errors.append(Issue(
                     _display_name(rec, dup_last_names, confirmed_new_fullnames),
@@ -536,6 +563,10 @@ def verify(
         zone = strip_zone_suffix(rec.zone).upper()
         area = rec.area.upper()
         old_zone = strip_zone_suffix(old_rec.zone).upper()
+        assignment = rec.position
+        if any(_norm_key(c) in confirmed_new_fullnames for c in rec.companions):
+            if assignment in ("SC", "DL", ""):
+                assignment = "DT" if assignment == "DL" else "TR"
         status, _ = _classify(
             MissionaryRecord(
                 display_name=rec.full_name, title="", last_name=rec.last, assignment=old_rec.position,
@@ -546,7 +577,7 @@ def verify(
         row: dict[str, object] = dict.fromkeys(df.columns, "")
         row.update({
             "Name of Missionary": name,
-            "Assignment": rec.position,
+            "Assignment": assignment,
             "New/Existing Zone": zone,
             "New/Existing Area": area,
             "New/Existing Companion(s)": " & ".join(dict.fromkeys(
@@ -565,7 +596,7 @@ def verify(
         df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
         corrections.append(Correction(
             name, "(row)", "masked as NEW MISSIONARY", "row added from the reports",
-            "named in old_transfer_report.xlsx, so this missionary is not new",
+            "named in both transfer reports; missing PDF row restored from authoritative assignments",
         ))
     result.news = df
 
@@ -588,7 +619,7 @@ def _load_manual_corrections(path: Path) -> list[tuple[str, str, str]]:
     if not path.exists():
         return []
     rows: list[tuple[str, str, str]] = []
-    with open(path, newline="", encoding="utf-8") as f:
+    with open(path, newline="", encoding="utf-8-sig") as f:
         for entry in csv.DictReader(f):
             name, field, value = entry.get("Name", "").strip(), entry.get("Field", "").strip(), entry.get("Value", "").strip()
             if name and field:
@@ -597,25 +628,34 @@ def _load_manual_corrections(path: Path) -> list[tuple[str, str, str]]:
 
 
 def _apply_manual_corrections(df: pd.DataFrame, path: Path | None, corrections: list[Correction]) -> None:
-    path = path or Path("data/manual_corrections.csv")
-    overrides = _load_manual_corrections(path)
-    if not overrides or df.empty:
+    # Never inherit another transfer's local office corrections implicitly.
+    if path is None:
         return
+    overrides = _load_manual_corrections(path)
+    if not overrides:
+        return
+    pending = []
     for name, field, value in overrides:
         if field not in df.columns:
-            continue
+            raise ValueError(f'Correction for "{name}" uses an unknown field "{field}". Use a News Format column heading.')
         target_key = _norm_key(name)
-        for idx in df.index:
-            display_key = _norm_key(str(df.at[idx, "Name of Missionary"]))
-            last_name_key = _norm_key(_last_name(df.at[idx, "Name of Missionary"]))
-            if target_key not in {display_key, last_name_key}:
-                continue
-            old_value = str(df.at[idx, field])
-            if old_value == value:
-                continue
-            corrections.append(Correction(str(df.at[idx, "Name of Missionary"]), field, old_value, value,
-                                           f"manual override ({path.name})"))
-            df.at[idx, field] = value
+        exact = [idx for idx in df.index if target_key == _norm_key(str(df.at[idx, "Name of Missionary"]))]
+        matches = exact or [idx for idx in df.index if target_key == _norm_key(_last_name(df.at[idx, "Name of Missionary"]))]
+        if len(matches) != 1:
+            reason = "matches more than one missionary" if matches else "does not match a named missionary"
+            raise ValueError(f'Correction for "{name}" {reason}. Copy the complete name from the current Transfer News, including its title and initials. New missionaries remain masked and have no named row.')
+        if field == "Assignment":
+            from roles import normalize_role
+            value = normalize_role(value)
+        pending.append((matches[0], field, value))
+    # Validate the entire file before changing any rows.
+    for idx, field, value in pending:
+        old_value = str(df.at[idx, field])
+        if old_value == value:
+            continue
+        corrections.append(Correction(str(df.at[idx, "Name of Missionary"]), field, old_value, value,
+                                       f"manual override ({path.name})"))
+        df.at[idx, field] = value
 
 
 # ── CLI / pipeline entry point ──────────────────────────────────────────────

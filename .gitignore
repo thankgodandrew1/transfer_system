@@ -28,6 +28,8 @@ __pycache__/
 .pytest_cache/
 .pytest-tmp/
 .venv/
+.venv-local/
+.venv-resilience/
 venv/
 .env
 

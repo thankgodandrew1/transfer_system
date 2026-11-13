@@ -284,12 +284,6 @@ def _save_upload(field: str, destination: Path, kind: str, required: bool = True
     return destination
 
 
-CURRENT_ASSIGNMENT_CODES = {
-    "SA", "AP", "AP1", "AP2", "ZL", "ZL1", "ZL2", "STL", "STL1", "STL2",
-    "DL", "DT", "TR", "SC", "JC",
-}
-
-
 def _parse_current_role_overrides(value: str) -> list[tuple[str, str]]:
     """Read the office's authoritative current-assignment list from the form."""
     overrides: list[tuple[str, str]] = []
@@ -303,14 +297,15 @@ def _parse_current_role_overrides(value: str) -> list[tuple[str, str]]:
                 f"Current assignment override line {line_number} must use: Missionary | Assignment."
             )
         name, assignment = (part.strip() for part in line.split("|", 1))
-        assignment = assignment.upper()
-        key = re.sub(r"[^A-Z0-9]", "", name.upper())
+        from roles import normalize_role
+        try:
+            assignment = normalize_role(assignment)
+        except ValueError as exc:
+            raise ValueError(f"Current assignment override line {line_number}: {exc}") from exc
+        from text_utils import comparison_key
+        key = comparison_key(name)
         if not name or not key or len(name) > 160:
             raise ValueError(f"Current assignment override line {line_number} needs a valid missionary name.")
-        if assignment not in CURRENT_ASSIGNMENT_CODES:
-            raise ValueError(
-                f"Current assignment override line {line_number} has an unsupported role: {assignment}."
-            )
         if key in seen:
             raise ValueError(f'"{name}" appears more than once in current assignment overrides.')
         seen.add(key)
@@ -373,13 +368,16 @@ def _workbook_summary(workbook_path: Path) -> dict[str, Any]:
     try:
         verification = pd.read_excel(workbook_path, sheet_name="Verification")
         counts = verification["Type"].astype(str).str.upper().value_counts().to_dict()
+        summary["blocking_details"] = verification.loc[
+            verification["Type"].astype(str).str.upper() == "BLOCKING", ["Missionary", "Detail"]
+        ].fillna("").to_dict("records")
         summary.update(
             corrections=int(counts.get("CORRECTED", 0)),
             blocking=int(counts.get("BLOCKING", 0)),
             notes=int(counts.get("NOTE", 0)),
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        raise ValueError("The verification results could not be read. Generate again using the original roster exports; no publication files have been approved.") from exc
     try:
         changes = pd.read_excel(workbook_path, sheet_name="Changes")
         summary["changes"] = len(changes)

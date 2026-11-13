@@ -71,7 +71,7 @@ NEW_MISSIONARY_MARK = "⊕"  # ⊕ as printed in the mission's Transfer News
 
 DEFAULT_MISSION_NAME = "NIGERIA UYO MISSION"
 DEFAULT_PRESIDENT = "PRESIDENT RICHARD PAAPA DADZIE"
-DEFAULT_PREPARED_BY = "ELDER EDISON-MUDOR & ELDER ANDREW"
+DEFAULT_PREPARED_BY = "MISSION OFFICE"
 DEFAULT_PREPARED_ROLE = "ASSISTANT TO THE PRESIDENT"
 
 # Mission seal watermark, printed faint on the cover and every zone/key page.
@@ -92,11 +92,24 @@ WATERMARK_ZONE_CENTER_Y_IN = 4.272
 
 
 def badge_colors_for(assignment: str) -> tuple[str, str]:
+    from roles import custom_role_colors
     code = str(assignment or "").strip().upper()
-    for prefix, colors in ASSIGNMENT_BADGE_COLORS.items():
-        if code.startswith(prefix):
-            return colors
-    return DEFAULT_BADGE_COLORS
+    if not code:
+        return DEFAULT_BADGE_COLORS
+    base = re.sub(r"\d+$", "", code)
+    return ASSIGNMENT_BADGE_COLORS.get(base, custom_role_colors(code))
+
+
+def assignment_key_entries(assignments=()):
+    entries = list(ASSIGNMENT_KEY_ENTRIES)
+    known = {code for code, _ in entries}
+    labels = dict(entries)
+    for code in sorted({str(value).strip().upper() for value in assignments}):
+        if not code or re.sub(r"\d+$", "", code) in known:
+            continue
+        label = " / ".join(labels.get(re.sub(r"\d+$", "", part.strip()), part.strip()) for part in code.split("/"))
+        entries.append((code, label))
+    return entries
 
 ORDER_COLUMNS = [
     "Previous Zone Order",
@@ -687,7 +700,7 @@ def count_assignment_codes(df: pd.DataFrame, prefix: str | None = None, exact: s
         if exact:
             count += sum(code == exact for code in codes)
         elif prefix:
-            count += sum(code.startswith(prefix) for code in codes)
+            count += sum(bool(re.fullmatch(re.escape(prefix) + r"\d*", code)) for code in codes)
     return count
 
 
@@ -699,7 +712,7 @@ def count_leadership_roles(df: pd.DataFrame) -> int:
     for value in df.get("Assignment", []):
         codes = [code.strip().upper() for code in str(value).split("/") if code.strip()]
         count += sum(
-            code.startswith(("AP", "ZL", "STL")) or code in ("DL", "DT")
+            bool(re.fullmatch(r"(?:AP|ZL|STL)\d*", code)) or code in ("DL", "DT")
             for code in codes
         )
     return count
@@ -1366,25 +1379,11 @@ def build_cover_page(
     _cover_band(document, BANNER_GREEN, 18.6)
 
 
-def build_assignment_key_page(document: Document) -> None:
+def build_assignment_key_page(document: Document, assignments=()) -> None:
     document.add_page_break()
 
-    # 6-column key grid with a merged green title row, exactly like the
-    # printed layout: AP ZL STL DL DT TR / SA JC SC ⊕.
-    entries = [
-        ("AP", "ASSISTANT TO THE PRESIDENT"),
-        ("ZL", "ZONE LEADER"),
-        ("STL", "SISTER TRAINING LEADER"),
-        ("DL", "DISTRICT LEADER"),
-        ("DT", "DISTRICT TRAINER"),
-        ("TR", "TRAINER"),
-        ("SA", "SPECIAL ASSIGNMENT"),
-        ("JC", "JUNIOR COMPANION"),
-        ("SC", "SENIOR COMPANION"),
-        (NEW_MISSIONARY_MARK, "NEW MISSIONARY (INCOMING)"),
-        ("", ""),
-        ("", ""),
-    ]
+    # Extend the familiar key with every custom role used in this transfer.
+    entries = assignment_key_entries(assignments) + [(NEW_MISSIONARY_MARK, "NEW MISSIONARY (INCOMING)")]
     cols = 6
     widths = [2366, 2367, 2367, 2367, 2367, 2366]
     row_count = (len(entries) + cols - 1) // cols
@@ -1534,7 +1533,7 @@ def build_transfer_docx(
             add_zone_table(document, zone_number, str(zone), rows, first_zone)
         first_zone = False
 
-    build_assignment_key_page(document)
+    build_assignment_key_page(document, df["Assignment"])
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     try:

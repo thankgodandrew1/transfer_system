@@ -214,7 +214,8 @@ def clean_text(value: object) -> str:
 
 
 def canonical(value: object) -> str:
-    return re.sub(r"[^A-Z0-9]", "", clean_text(value).upper())
+    from text_utils import comparison_key
+    return comparison_key(clean_text(value))
 
 
 def _title_case_code(value: str) -> str:
@@ -440,15 +441,22 @@ def _parse_pdf_style_text(text: str, directory: ApartmentDirectory | None) -> li
         zone = next((item for item in known_zones if canonical(item) in canonical(line)), area_entry.zone)
         area_position = canonical(line).find(canonical(area_entry.area))
         compact_line = canonical(line)
-        name_compact = compact_line[:area_position]
-        name_compact = re.sub(r"^\d+", "", name_compact)
-        # Stop the name at the first assignment/role code or previous-zone marker when available.
-        name_compact = re.split(
-            r"(?:AP|DL|DT|STL|ZL|ZLT|TRAINER|SENIOR|JUNIOR|COMPANION|" +
-            "|".join(re.escape(canonical(zone_name)) for zone_name in known_zones) + r")",
-            name_compact,
-            maxsplit=1,
-        )[0]
+        # Find role tokens before removing spaces: AP inside a surname such
+        # as STAPLETON must never truncate the missionary's identity.
+        name_part = line[role_match.start():]
+        boundary = re.search(
+            r"\s+(?:AP[12]?|DL|DT|TR|SC|JC|STL[12]?|ZL[12]?|ZLT|TRAINER|SENIOR|JUNIOR|COMPANION)\b",
+            name_part,
+        )
+        if boundary:
+            name_compact = canonical(name_part[:boundary.start()])
+        else:
+            name_compact = compact_line[:area_position]
+            name_compact = re.sub(r"^\d+", "", name_compact)
+            name_compact = re.split(
+                "|".join(re.escape(canonical(zone_name)) for zone_name in known_zones),
+                name_compact, maxsplit=1,
+            )[0]
         if not (name_compact.startswith("ELDER") or name_compact.startswith("SISTER")):
             continue
         honorific = "ELDER" if name_compact.startswith("ELDER") else "SISTER"

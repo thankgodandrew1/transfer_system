@@ -135,7 +135,7 @@ def test_zone_page_blocks_are_found_when_the_second_block_moves_up() -> None:
     assert areas[2].members[1].has_t
 
 
-def test_roster_missionary_without_a_news_row_is_blocking(tmp_path: Path) -> None:
+def test_roster_missionary_without_a_news_row_is_restored(tmp_path: Path) -> None:
     columns = [
         "Name of Missionary", "Assignment", "New/Existing Zone", "New/Existing Area",
         "New/Existing Companion(s)", "Status", "Previous Zone", "Previous Area", "Previous Assignment",
@@ -163,9 +163,10 @@ def test_roster_missionary_without_a_news_row_is_blocking(tmp_path: Path) -> Non
         reports.append(tmp_path / name)
 
     result = verify(news, *reports)
-    assert [e.row_name for e in result.blocking_errors] == ["ELDER SKIPPED"]
-    assert "(Uyo / Mill Road 1&2)" in result.blocking_errors[0].detail
-    assert "no row" in result.blocking_errors[0].detail
+    assert not result.blocking_errors
+    restored = result.news[result.news["Name of Missionary"] == "ELDER SKIPPED"].iloc[0]
+    assert restored["New/Existing Area"] == "MILL ROAD 1&2"
+    assert restored["Previous Zone"] == "UYO"
 
 
 def _prev_record(assignment: str, companion: str = "") -> generate_news_format.MissionaryRecord:
@@ -405,7 +406,7 @@ def test_genuinely_new_missionary_stays_masked(tmp_path: Path) -> None:
     assert result.news.at[0, "Assignment"] == "TR"
 
 
-def test_missing_missionary_with_no_masked_slot_still_blocks(tmp_path: Path) -> None:
+def test_missing_missionary_with_no_masked_slot_is_restored_from_reports(tmp_path: Path) -> None:
     news = pd.DataFrame(
         [["ELDER SENIOR", "SC", "ETINAN", "NDON UTIM", "ELDER PARTNER", "STAYING", "ETINAN", "NDON UTIM", "SC"]],
         columns=_NEWS_COLUMNS,
@@ -419,7 +420,8 @@ def test_missing_missionary_with_no_masked_slot_still_blocks(tmp_path: Path) -> 
 
     result = verify(news, current, old, manual_corrections_path=tmp_path / "none.csv")
 
-    assert [e.row_name for e in result.blocking_errors] == ["ELDER PARTNER"]
+    assert not result.blocking_errors
+    assert "ELDER PARTNER" in set(result.news["Name of Missionary"])
 
 
 def test_last_name_with_a_suffix_is_verified(tmp_path: Path) -> None:

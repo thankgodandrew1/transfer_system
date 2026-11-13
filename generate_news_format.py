@@ -161,7 +161,8 @@ def _norm(name: str) -> str:
 
 def _norm_key(text: str) -> str:
     """Alphanumeric-only uppercase form for fuzzy comparison."""
-    return re.sub(r"[^A-Z0-9]", "", _norm(text))
+    from text_utils import comparison_key
+    return comparison_key(text)
 
 
 # Words that can precede "ZONE"/appear in zone cells but are never zone names

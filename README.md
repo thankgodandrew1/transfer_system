@@ -30,7 +30,11 @@ Each browser run uses an isolated temporary folder. Files expire automatically a
 | Manual corrections | CSV, optional | Approved overrides with `Name,Field,Value` columns |
 | Current assignment overrides | Text, optional | Per-transfer authority for any current role, one line such as `Elder Erondu | DL` |
 
-Use **Current assignment overrides** whenever a missionary's role needs explicit confirmation. List only the missionaries whose current role differs from, or is not shown by, Transfer Management. The entries are applied last, so a former SA can be assigned `JC`, `SC`, `DL`, `ZL1`, or any supported role. Supported codes are `SA`, `AP`, `AP1`, `AP2`, `ZL`, `ZL1`, `ZL2`, `STL`, `STL1`, `STL2`, `DL`, `DT`, `TR`, `SC`, and `JC`.
+Use **Current assignment overrides** whenever a missionary's role needs explicit confirmation. List only the missionaries whose current role differs from, or is not shown by, Transfer Management. Entries are applied last. Roles are open-ended: `Sister Gabriel | STL/TR`, `Elder Example | WELFARE`, and future combinations work without code changes. Labels may contain up to 40 characters. Familiar role colours are retained; custom roles and combinations receive stable colours and appear in both Word and PDF assignment keys. Custom descriptions use the office's role label rather than guessing its meaning.
+
+Corrections apply only when explicitly supplied for this generation; the program no longer silently loads `data/manual_corrections.csv`. An unknown name, ambiguous surname, unknown column or malformed role produces an actionable message before any corrections are applied. Copy the complete printed missionary name, including title and initials. New missionaries remain masked and do not have named rows to override.
+
+Roster loading tolerates cover sheets, title rows (within the first 20 rows), header case and extra whitespace. Missing columns, empty rosters, duplicate identities and missing assignments produce instructions for replacing or correcting the source export. Named missionaries omitted by PDF parsing are restored from the two authoritative rosters and recorded in Verification. Unresolved identities still stop publication; the result page lists these issues directly. Review workbook changes do not persist into a new generation: correct the source upload or provide an explicit correction.
 
 ## Outputs
 

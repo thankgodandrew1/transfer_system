@@ -537,8 +537,9 @@ def _zone_story(styles: dict[str, ParagraphStyle], number: int, zone: str, rows:
     return [KeepTogether([divider, Spacer(1, 0.08 * inch)]), table]
 
 
-def _assignment_key(styles: dict[str, ParagraphStyle]) -> list:
-    entries = list(ASSIGNMENT_KEY_ENTRIES) + [("+", "NEW MISSIONARY (INCOMING)")]
+def _assignment_key(styles: dict[str, ParagraphStyle], assignments=()) -> list:
+    from generate_transfer_document import assignment_key_entries
+    entries = assignment_key_entries(assignments) + [("+", "NEW MISSIONARY (INCOMING)")]
     cells = []
     for code, label in entries:
         bg, fg = badge_colors_for(code)
@@ -621,7 +622,7 @@ def build_transfer_pdf(
             story.append(PageBreak())
         story.extend(_zone_story(styles, number, zone, rows))
     story.append(PageBreak())
-    story.extend(_assignment_key(styles))
+    story.extend(_assignment_key(styles, df["Assignment"]))
     document.build(
         story,
         onFirstPage=_cover_page(mission_name, title, stats, grouped, president, prepared_by),
