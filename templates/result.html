@@ -41,6 +41,7 @@
       </aside>
     </div>
   {% endif %}
+  {% if job.has_review %}<div class="step-card"><h2>Continue from this reviewed package</h2>{% if job.status == 'complete' %}<p>The previous baseline includes your emergency-transfer corrections. Replacement PDFs can still be supplied on the Movement page.</p><a class="button primary" href="{{ url_for('movement', news_job=job.job_id) }}">Prepare movements using these assignments</a>{% endif %}<a class="button secondary" href="{{ url_for('review_job', job_id=job.job_id) }}">{{ 'View review / start a revision' if job.status == 'complete' else 'Correct assignments and retry' }}</a></div>{% endif %}
   <div class="result-actions"><a class="button primary" href="{{ url_for('index') }}">Start another transfer</a><a class="button secondary" href="{{ url_for('guide') }}">Open the user guide</a></div>
 </div></section>
 {% endblock %}

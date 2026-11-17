@@ -23,6 +23,7 @@
     <div class="section-heading"><div><p class="eyebrow">Generation workspace</p><h2>Provide the four transfer records</h2></div><p>All four files are required for fully verified output. Each file may be up to {{ max_file_mb }} MB.</p></div>
     <form id="generation-form" class="generator-form" action="{{ url_for('generate') }}" method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="review_before_publish" value="on">
       <div class="step-card">
         <div class="step-number">01</div>
         <div class="step-content">
@@ -55,9 +56,9 @@
           <div class="step-heading"><h3>Optional controls</h3><span>Advanced</span></div>
           <div class="optional-grid">
             <label class="compact-upload"><span><strong>Word template</strong><small>DOCX with supported placeholders</small></span><input type="file" name="word_template" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"></label>
-            <label class="compact-upload"><span><strong>Manual corrections</strong><small>CSV with Name, Field, Value</small></span><input type="file" name="manual_corrections" accept=".csv,text/csv"></label>
+            <p>After upload, use the guided review screen to correct roles, assignments, name variations and emergency transfers. No corrections CSV or missionary IDs are needed.</p>
           </div>
-          <label class="full-textarea"><span><strong>Current assignment overrides</strong><small>Optional. One missionary per line: <code>Elder Erondu | JC</code>, <code>Elder Example | SA</code>, or <code>Elder Example | DL</code>. New roles and combinations such as STL/TR are accepted and automatically colour-coded. This is the office's authority for current roles and overrides any uploaded corrections CSV.</small></span><textarea name="current_role_overrides" rows="4" maxlength="20000" placeholder="Elder Erondu | JC&#10;Elder Example | SA&#10;Elder Example | DL"></textarea></label>
+          <label class="full-textarea"><span><strong>Current assignment overrides</strong><small>Optional quick entries. One missionary per line: <code>Elder Erondu | JC</code>, <code>Elder Example | SA</code>, or <code>Sister Gabriel | STL/TR</code>. New roles are accepted and automatically colour-coded. These entries appear in the roster review, where you can change or undo them. You can also leave this blank and select missionaries on the next screen.</small></span><textarea name="current_role_overrides" rows="4" maxlength="20000" placeholder="Elder Erondu | JC&#10;Elder Example | SA&#10;Sister Gabriel | STL/TR"></textarea></label>
           <div class="check-row">
             <label class="check-card"><input type="checkbox" name="include_roster" checked><span><strong>Create updated roster</strong><small>Recommended for the next transfer cycle</small></span></label>
             <label class="check-card"><input type="checkbox" name="include_stats" checked><span><strong>Create statistics</strong><small>Word and PDF summaries</small></span></label>
@@ -66,14 +67,14 @@
       </div>
 
       <div class="submit-bar">
-        <div><strong>Ready to generate?</strong><span>The run may take a minute on free hosting after the service wakes up.</span></div>
-        <button class="button primary large" type="submit"><span>Generate Transfer News</span><span aria-hidden="true">→</span></button>
+        <div><strong>Ready to review?</strong><span>Review and correct both rosters before generating the publication files.</span></div>
+        <button class="button primary large" type="submit"><span>Upload and review rosters</span><span aria-hidden="true">→</span></button>
       </div>
     </form>
   </div>
 </section>
 
 <div id="processing-overlay" class="processing-overlay" hidden role="status" aria-live="polite">
-  <div class="processing-card"><div class="spinner" aria-hidden="true"></div><p class="eyebrow">Secure generation in progress</p><h2>Building your transfer package</h2><p id="processing-message">Validating uploaded records…</p><div class="progress-track"><span></span></div><small>Keep this tab open. Your files are being handled in an isolated temporary workspace.</small></div>
+  <div class="processing-card"><div class="spinner" aria-hidden="true"></div><p class="eyebrow">Preparing roster review</p><h2>Reading your uploaded records</h2><p id="processing-message">Validating uploaded records…</p><div class="progress-track"><span></span></div><small>Keep this tab open. You will review the assignments before publication files are created.</small></div>
 </div>
 {% endblock %}

@@ -403,12 +403,21 @@ def _run_generation(
     input_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    management_pdf = _save_upload("management_pdf", input_dir / "current_transfer_management.pdf", "pdf")
-    previous_news = _save_upload("previous_news_pdf", input_dir / "previous_transfer_news.pdf", "pdf")
-    current_report = _save_upload("current_report", input_dir / "current_transfer_report.xlsx", "xlsx")
-    old_report = _save_upload("old_report", input_dir / "old_transfer_report.xlsx", "xlsx")
-    template = _save_upload("word_template", input_dir / "template.docx", "docx", required=False)
-    manual_corrections = _save_upload("manual_corrections", input_dir / "manual_corrections.csv", "csv", required=False)
+    if values.get("_reviewed"):
+        from review_workflow import export_review, load_review
+        current_report, old_report = export_review(job_dir, load_review(job_dir))
+        management_pdf = input_dir / "current_transfer_management.pdf"
+        previous_news = input_dir / "previous_transfer_news.pdf"
+        template = input_dir / "template.docx"
+        template = template if template.exists() else None
+        manual_corrections = None
+    else:
+        management_pdf = _save_upload("management_pdf", input_dir / "current_transfer_management.pdf", "pdf")
+        previous_news = _save_upload("previous_news_pdf", input_dir / "previous_transfer_news.pdf", "pdf")
+        current_report = _save_upload("current_report", input_dir / "current_transfer_report.xlsx", "xlsx")
+        old_report = _save_upload("old_report", input_dir / "old_transfer_report.xlsx", "xlsx")
+        template = _save_upload("word_template", input_dir / "template.docx", "docx", required=False)
+        manual_corrections = _save_upload("manual_corrections", input_dir / "manual_corrections.csv", "csv", required=False)
     role_overrides = _parse_current_role_overrides(values["current_role_overrides"])
     corrections = _combine_corrections(
         manual_corrections,
@@ -515,6 +524,21 @@ def _run_generation(
         (news_docx, "Transfer News - Word", "docx"),
         (news_pdf, "Transfer News - PDF", "pdf"),
     ]
+    if values.get("_reviewed"):
+        from review_workflow import baseline_workbook, load_review
+        state = load_review(job_dir)
+        baseline = output_dir / "Previous_Baseline.xlsx"
+        baseline_workbook(state, baseline)
+        baseline_pdf = output_dir / "Previous_Baseline_For_Movements.pdf"
+        build_transfer_pdf(baseline, baseline_pdf, mission_name=values["mission_name"],
+            transfer_title="PREVIOUS ASSIGNMENTS - EMERGENCY UPDATES INCLUDED",
+            president=values["president"], prepared_by=values["prepared_by"], roster_mode=True)
+        audit = output_dir / "Office_Review_History.json"
+        audit.write_text(json.dumps({"applied": state["edits"], "undone": state.get("undone", [])}, indent=2, ensure_ascii=False), encoding="utf-8")
+        file_specs.extend([(baseline_pdf, "Previous baseline for movements - PDF", "pdf"),
+            (old_report, "Reviewed previous roster - Excel", "xlsx"),
+            (current_report, "Reviewed current roster - Excel", "xlsx"),
+            (audit, "Office correction history", "json")])
     if values["include_roster"]:
         file_specs.extend([
             (roster_docx, "Updated roster - Word", "docx"),
@@ -584,6 +608,15 @@ def _run_movement_generation(
         "pdf",
         required=False,
     )
+    if values.get("news_job"):
+        previous_saved, current_saved = _movement_news_files(values["news_job"])
+        # Explicit replacement uploads always take precedence over the saved run.
+        if previous_pdf is None and not values["previous_text"]:
+            previous_pdf = input_dir / "previous_transfer_news.pdf"
+            shutil.copyfile(previous_saved, previous_pdf)
+        if current_pdf is None and not values["current_text"]:
+            current_pdf = input_dir / "current_transfer_news.pdf"
+            shutil.copyfile(current_saved, current_pdf)
     directory_path = _save_apartment_directory("apartment_directory", input_dir)
     directory = load_apartment_directory(directory_path)
 
@@ -743,8 +776,16 @@ def index():
 
 @app.get("/movement")
 def movement():
+    news_job = request.args.get("news_job", "")
+    if news_job:
+        try:
+            _movement_news_files(news_job)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("movement"))
     return render_template(
         "movement.html",
+        news_job=news_job,
         defaults={
             "mission_name": DEFAULT_MISSION_NAME,
             "president": DEFAULT_PRESIDENT,
@@ -796,6 +837,23 @@ def generate():
     }
     _write_manifest(job_dir, manifest)
     try:
+        if request.form.get("review_before_publish") == "on":
+            from review_workflow import initialize_review
+            inputs = job_dir / "inputs"
+            inputs.mkdir()
+            for field, filename, kind, required in (
+                ("management_pdf", "current_transfer_management.pdf", "pdf", True),
+                ("previous_news_pdf", "previous_transfer_news.pdf", "pdf", True),
+                ("current_report", "current_transfer_report.xlsx", "xlsx", True),
+                ("old_report", "old_transfer_report.xlsx", "xlsx", True),
+                ("word_template", "template.docx", "docx", False),
+            ):
+                _save_upload(field, inputs / filename, kind, required=required)
+            if request.files.get("manual_corrections") and request.files["manual_corrections"].filename:
+                raise ValueError("Use the guided review controls for corrections, or update the source roster before uploading it.")
+            initialize_review(job_dir, values, _parse_current_role_overrides(values["current_role_overrides"]))
+            manifest.update(status="review", has_review=True)
+            return redirect(url_for("review_job", job_id=job_id))
         files, summary, warnings, blocked_message = _run_generation(job_dir, values)
         manifest.update(
             status="blocked" if blocked_message else "complete",
@@ -833,6 +891,7 @@ def generate_movement():
         "president": _form_text("president", DEFAULT_PRESIDENT, 120),
         "prepared_by": _form_text("prepared_by", DEFAULT_PREPARED_BY, 160),
         "previous_title": _form_text("previous_title", "", 120).upper(),
+        "news_job": _form_text("news_job", "", 32),
         "current_title": _form_text("current_title", "", 120).upper(),
         "effective_date": _form_text("effective_date", "", 10),
         "default_status": DEFAULT_STATUS,
@@ -864,9 +923,121 @@ def generate_movement():
     return redirect(url_for("job_result", job_id=job_id))
 
 
+def _movement_news_files(job_id: str) -> tuple[Path, Path]:
+    job = _load_manifest(job_id)
+    if job.get("kind") != "transfer_news" or job.get("status") != "complete":
+        raise ValueError("Choose a completed Transfer News package, or upload both movement PDFs.")
+    paths = []
+    for label in ("Previous baseline for movements - PDF", "Transfer News - PDF"):
+        record = next((item for item in job["files"] if item["label"] == label), None)
+        if not record:
+            raise ValueError("This package has no reviewed previous baseline. Upload the two movement PDFs instead.")
+        path = (_job_dir(job_id) / record["relative_path"]).resolve()
+        if _job_dir(job_id) not in path.parents or not path.is_file():
+            abort(404)
+        paths.append(path)
+    return tuple(paths)
+
+
+@app.route("/jobs/<job_id>/review", methods=["GET", "POST"])
+def review_job(job_id: str):
+    from review_workflow import edit_assignment, link_identity, load_review, review_summary, save_review, undo_last
+    job = _load_manifest(job_id)
+    directory = _job_dir(job_id)
+    if job.get("kind") != "transfer_news" or not (directory / "review.json").exists():
+        abort(404)
+    if request.method == "POST":
+        _require_csrf()
+        if not generation_lock.acquire(blocking=False):
+            flash("Another operation is running. Please try again shortly.", "error")
+            return redirect(url_for("review_job", job_id=job_id)), 429
+        try:
+            # Reload only after acquiring the lock, so concurrent tabs cannot
+            # overwrite a newer review or publish an outdated roster snapshot.
+            job = _load_manifest(job_id)
+            state = load_review(directory)
+            if job["status"] not in ("review", "blocked", "error"):
+                raise ValueError("This package is already generated. Start a revised review to make further changes.")
+            if request.form.get("revision") != str(state["revision"]):
+                raise ValueError("This review changed in another tab. The latest assignments are shown below; check them and try again.")
+            action = request.form.get("action")
+            if action in ("edit", "link", "undo"):
+                if action == "edit":
+                    edit_assignment(state, request.form)
+                elif action == "link":
+                    link_identity(state, request.form)
+                else:
+                    undo_last(state)
+                save_review(directory, state)
+                job.update(status="review", files=[], error=None)
+                _write_manifest(directory, job)
+                flash("Correction saved. Review the updated assignments before generating.", "success")
+            elif action == "publish":
+                if request.form.get("confirmed") != "on":
+                    raise ValueError("Confirm that the rosters and emergency transfers have been checked.")
+                if not review_summary(state)["matched_count"]:
+                    raise ValueError("The rosters have no names in common. Upload consecutive rosters or link confirmed name variations before generating.")
+                values = dict(state["values"], _reviewed=True)
+                for key, limit in (("mission_name", 120), ("president", 120), ("prepared_by", 160), ("transfer_title", 120)):
+                    values[key] = _form_text(key, values[key], limit)
+                state["values"] = {key: value for key, value in values.items() if key != "_reviewed"}
+                save_review(directory, state)
+                job.update(status="processing", files=[], error=None)
+                _write_manifest(directory, job)
+                files, summary, warnings, blocked = _run_generation(directory, values)
+                job.update(status="blocked" if blocked else "complete", files=files, summary=summary, warnings=warnings, error=blocked)
+                _write_manifest(directory, job)
+                if not blocked:
+                    return redirect(url_for("job_result", job_id=job_id))
+                flash("Verification needs attention. Check the issues below and correct the source assignments here.", "error")
+            else:
+                raise ValueError("Choose Save correction or Generate package.")
+        except ValueError as exc:
+            if job.get("status") == "processing":
+                job.update(status="error", error=str(exc))
+                _write_manifest(directory, job)
+            flash(str(exc), "error")
+        except Exception:
+            job.update(status="error", error="The package could not be generated. Your review is saved; try again or replace the source exports.")
+            _write_manifest(directory, job)
+            flash(job["error"], "error")
+        finally:
+            generation_lock.release()
+        return redirect(url_for("review_job", job_id=job_id))
+    state = load_review(directory)
+    return render_template("review.html", job=job, state=state, summary=review_summary(state))
+
+
+@app.post("/jobs/<job_id>/revise")
+def revise_job(job_id: str):
+    from review_workflow import load_review, save_review
+    _require_csrf()
+    original = _load_manifest(job_id)
+    if original.get("kind") != "transfer_news" or not (_job_dir(job_id) / "review.json").is_file():
+        abort(404)
+    if not generation_lock.acquire(blocking=False):
+        return "Another operation is running. Try again shortly.", 429
+    try:
+        state = load_review(_job_dir(job_id))
+        new_id = secrets.token_hex(16)
+        directory = _job_dir(new_id)
+        directory.mkdir()
+        shutil.copytree(_job_dir(job_id) / "inputs", directory / "inputs")
+        state["revision"] = 0
+        save_review(directory, state)
+        created = utc_now()
+        _write_manifest(directory, dict(job_id=new_id, kind="transfer_news", status="review", files=[], summary={}, warnings=[],
+            created_at=created.isoformat(), expires_at=(created + timedelta(minutes=JOB_TTL_MINUTES)).isoformat()))
+    finally:
+        generation_lock.release()
+    return redirect(url_for("review_job", job_id=new_id))
+
+
 @app.get("/jobs/<job_id>")
 def job_result(job_id: str):
     manifest = _load_manifest(job_id)
+    if manifest.get("status") == "review":
+        return redirect(url_for("review_job", job_id=job_id))
     template = "movement_result.html" if manifest.get("kind") == "movement" else "result.html"
     return render_template(template, job=manifest)
 

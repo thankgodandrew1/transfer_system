@@ -26,6 +26,7 @@
     <div class="section-heading"><div><p class="eyebrow">Movement workspace</p><h2>Compare assignments and apartments</h2></div><p>Upload the two Transfer News PDFs and the office apartment directory. If a PDF cannot be read, paste its table in the fallback section.</p></div>
     <form id="movement-form" data-generation-form data-processing-kind="movement" class="generator-form" action="{{ url_for('generate_movement') }}" method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if news_job %}<input type="hidden" name="news_job" value="{{ news_job }}"><div class="success-note">Using the completed package's reviewed previous baseline and current Transfer News. Upload the apartment directory below. If another emergency transfer changed the starting assignments, <a href="{{ url_for('review_job', job_id=news_job) }}">start a revised review</a> or replace either PDF here.</div>{% endif %}
 
       <div class="step-card">
         <div class="step-number">01</div>

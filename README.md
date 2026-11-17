@@ -8,6 +8,7 @@ Created by [ThankGod Andrew](https://github.com/thankgodandrew1/transfer_system)
 
 The generator:
 
+0. Opens a guided roster review after upload, before creating publication files. No missionary IDs are required.
 1. Parses the current Transfer Management PDF.
 2. Compares it with the previous Transfer News PDF.
 3. Verifies current and previous facts against the two authoritative roster reports, and confirms every current missionary who is not newly arrived has exactly one row.
@@ -27,14 +28,25 @@ Each browser run uses an isolated temporary folder. Files expire automatically a
 | Current Transfer Report | XLSX | Authoritative current roster verification |
 | Previous Transfer Report | XLSX | Authoritative previous-state and incoming-missionary verification |
 | Word template | DOCX, optional | Approved custom document layout |
-| Manual corrections | CSV, optional | Approved overrides with `Name,Field,Value` columns |
+| Guided corrections | Review screen | Select a missionary, update roles/assignments/companions, or record a previous emergency transfer |
 | Current assignment overrides | Text, optional | Per-transfer authority for any current role, one line such as `Elder Erondu | DL` |
 
-Use **Current assignment overrides** whenever a missionary's role needs explicit confirmation. List only the missionaries whose current role differs from, or is not shown by, Transfer Management. Entries are applied last. Roles are open-ended: `Sister Gabriel | STL/TR`, `Elder Example | WELFARE`, and future combinations work without code changes. Labels may contain up to 40 characters. Familiar role colours are retained; custom roles and combinations receive stable colours and appear in both Word and PDF assignment keys. Custom descriptions use the office's role label rather than guessing its meaning.
+Use **Current assignment overrides** for quick role entries during upload. The entries are incorporated into the current roster before review, and can then be changed or undone with the guided controls. Roles are open-ended: `Sister Gabriel | STL/TR`, `Elder Example | WELFARE`, and future combinations work without code changes. Labels may contain up to 40 characters. Familiar role colours are retained; custom roles and combinations receive stable colours and appear in both Word and PDF assignment keys. Custom descriptions use the office's role label rather than guessing its meaning.
 
 Corrections apply only when explicitly supplied for this generation; the program no longer silently loads `data/manual_corrections.csv`. An unknown name, ambiguous surname, unknown column or malformed role produces an actionable message before any corrections are applied. Copy the complete printed missionary name, including title and initials. New missionaries remain masked and do not have named rows to override.
 
 Roster loading tolerates cover sheets, title rows (within the first 20 rows), header case and extra whitespace. Missing columns, empty rosters, duplicate identities and missing assignments produce instructions for replacing or correcting the source export. Named missionaries omitted by PDF parsing are restored from the two authoritative rosters and recorded in Verification. Unresolved identities still stop publication; the result page lists these issues directly. Review workbook changes do not persist into a new generation: correct the source upload or provide an explicit correction.
+
+### Guided review and emergency transfers
+
+1. Upload the four records and select **Upload and review rosters**. Nothing is published at this stage. Check the roster counts, apparent arrivals/departures and searchable assignment tables.
+2. Select **Current roster** to correct a new assignment. Select **Previous baseline** for an emergency transfer that changed where missionaries were immediately before this cycle. Choose the missionary and complete companionship; enter zone, area, role and the reason. Zone and area apply to the whole selected companionship. Old companion links are removed and the new links are made reciprocal.
+3. If an apparent arrival and departure are the same person under different spellings, explicitly link them. No fuzzy identity guesses or external IDs are used. The original spelling remains in the correction history. **Undo the last correction** restores assignments or a mistaken identity link.
+4. Confirm the rosters and publication details, then generate. The corrected snapshots are passed through verification again. If verification stops, return to the saved review and correct it without re-uploading all files.
+5. The package includes reviewed current/previous Excel rosters, an office correction history, and **Previous baseline for movements - PDF**. This baseline represents actual FROM locations, including emergency updates; it differs from the updated CURRENT roster saved for the next transfer.
+6. Select **Prepare movements using these assignments**. The previous baseline and current news are supplied automatically; upload the apartment directory. Explicit replacement PDFs or fallback text take precedence. If another emergency occurs, open the review and start a revision, or supply a replacement previous PDF.
+
+Uploaded originals remain unchanged. A completed package is immutable through the review controls: **Start a revised review** creates a separate run, leaving the original downloads intact. Reviews and packages are temporary and expire; download the package and reviewed rosters for office records. Current hosting uses one Gunicorn worker and two threads; the generation lock and revision check prevent concurrent edits or stale tabs from replacing a newer review. The legacy direct generation endpoint and CLI still support explicit corrections CSVs for existing integrations; the guided browser flow does not require CSVs.
 
 ## Outputs
 

@@ -205,6 +205,9 @@ def _base_name(key: str) -> str:
     """MENSAH.J or MENSAH J. -> MENSAH. The mission's older news uses the
     first suffix style to disambiguate duplicate last names; the documents
     this system prints (verify_news._display_name) use the second."""
+    parts = key.rsplit(" ", 1)
+    if len(parts) == 2 and parts[1].upper() not in {"JR.", "SR.", "II.", "III.", "IV."} and re.fullmatch(r"[^\W_]+\.", parts[1]):
+        return parts[0].strip()
     return re.sub(r"\s+[A-Z]$", "", key.split(".")[0].strip())
 
 

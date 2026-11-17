@@ -81,7 +81,9 @@ _COMPOUND_TO_CODE = {
 
 def _normalize_position(raw: object) -> str:
     """'(ZL1)' -> 'ZL1'; '(DL, TR)' -> 'DT'; '(ZL, JC)' -> 'ZL'; '(SC)' -> 'SC'."""
-    text = str(raw or "").strip().strip("()")
+    text = str(raw or "").strip()
+    if text.startswith("(") and text.endswith(")"):
+        text = text[1:-1].strip()
     if not text:
         return ""
     parts = [p.strip().upper() for p in text.split(",")]
@@ -215,13 +217,26 @@ def _last_name(display_name: str) -> str:
     if parts and parts[0].upper() in ("ELDER", "ELDERS", "SISTER", "SISTERS"):
         parts = parts[1:]
     # Strip a trailing first-initial disambiguator ("OKON P." -> "OKON").
-    if parts and re.fullmatch(r"[A-Z]\.", parts[-1]):
+    if parts and parts[-1].upper() not in {"JR.", "SR.", "II.", "III.", "IV."} and re.fullmatch(r"[^\W_]+\.", parts[-1]):
         parts = parts[:-1]
     # Keep every remaining word: a last name can be "COLLINS JR".
     return " ".join(parts).split(".")[0]
 
 
-def _display_name(rec: "ReportRecord", dup_last_names: set[str], confirmed_new_fullnames: set[str]) -> str:
+def _name_disambiguators(records: list[ReportRecord]) -> dict[str, str]:
+    result = {}
+    for rec in records:
+        first = _norm_key(rec.full_name.split(",", 1)[1]) if "," in rec.full_name else ""
+        peers = [_norm_key(other.full_name.split(",", 1)[1]) for other in records
+            if other is not rec and _norm_key(other.last) == _norm_key(rec.last) and "," in other.full_name]
+        if not first or not peers:
+            continue
+        length = next((n for n in range(1, len(first) + 1) if all(first[:n] != peer[:n] for peer in peers)), len(first))
+        result[_norm_key(rec.full_name)] = first[:length]
+    return result
+
+
+def _display_name(rec: "ReportRecord", dup_last_names: set[str], confirmed_new_fullnames: set[str], disambiguators=None) -> str:
     """The name a person should print as: masked if they're a confirmed new
     missionary, disambiguated with a first initial if their last name
     collides with another named current missionary, otherwise plain."""
@@ -232,7 +247,8 @@ def _display_name(rec: "ReportRecord", dup_last_names: set[str], confirmed_new_f
     if _norm_key(rec.last) in dup_last_names:
         first = rec.full_name.split(",", 1)[1].strip() if "," in rec.full_name else ""
         if first:
-            return f"{title} {last} {first[0].upper()}."
+            prefix = (disambiguators or {}).get(_norm_key(rec.full_name), first[0].upper())
+            return f"{title} {last} {prefix}."
     return f"{title} {last}"
 
 
@@ -280,13 +296,24 @@ def verify(
     for r in named_current:
         last_counts[_norm_key(r.last)] = last_counts.get(_norm_key(r.last), 0) + 1
     dup_last_names = {k for k, v in last_counts.items() if v > 1}
+    disambiguators = _name_disambiguators(named_current)
+    def display(rec):
+        return _display_name(rec, dup_last_names, confirmed_new_fullnames, disambiguators)
+    printed_records = {}
+    for rec in named_current:
+        printed_records.setdefault(_norm_key(display(rec)), []).append(rec)
 
     df = result.news
     if df.empty:
         return result
 
     def find_current(row) -> ReportRecord | None:
+        printed = printed_records.get(_norm_key(row["Name of Missionary"]), [])
         last_key = _norm_key(_last_name(row["Name of Missionary"]))
+        if len(printed) == 1:
+            explicit_initial = _norm_key(row["Name of Missionary"]) != _norm_key(f'{printed[0].title or "ELDER"} {printed[0].last}')
+            if explicit_initial or len(current_by_last.get(last_key, [])) == 1:
+                return printed[0]
         area_key = _norm_key(row["New/Existing Area"])
         cands = current_by_key.get((last_key, area_key))
         if not cands:
@@ -308,9 +335,9 @@ def verify(
                 for rec in cands
             ]
             scored.sort(key=lambda t: -t[1])
-            if scored[0][1] > 0:
+            if scored[0][1] > 0 and (len(scored) == 1 or scored[0][1] > scored[1][1]):
                 cands = [scored[0][0]]
-        return cands[0]
+        return cands[0] if len(cands) == 1 else None
 
     def position_matches(news_code: str, report_code: str) -> bool:
         n, r = _norm_key(news_code), _norm_key(report_code)
@@ -384,7 +411,7 @@ def verify(
         report_comp_lasts = {_norm_key(c.split(",")[0]) for c in rec.companions}
         if rec.companions:
             new_companions = " & ".join(dict.fromkeys(
-                _display_name(current_by_fullname[_norm_key(c)], dup_last_names, confirmed_new_fullnames)
+                display(current_by_fullname[_norm_key(c)])
                 if _norm_key(c) in current_by_fullname
                 else c.split(",")[0].strip().upper()
                 for c in rec.companions
@@ -398,7 +425,7 @@ def verify(
         # named current missionary sharing the last name. (Confirmed-new
         # rows are handled by the masking pass below, not here.)
         if _norm_key(rec.full_name) not in confirmed_new_fullnames and _norm_key(rec.last) in dup_last_names:
-            expected_name = _display_name(rec, dup_last_names, confirmed_new_fullnames)
+            expected_name = display(rec)
             if expected_name != row_name:
                 corrections.append(Correction(row_name, "Name of Missionary", row_name, expected_name,
                                                f"disambiguated — another current missionary also has last name {rec.last!r}"))
@@ -529,7 +556,7 @@ def verify(
                     undo_trainer_promotion(rec, masked_slot)
             elif count > 1:
                 result.blocking_errors.append(Issue(
-                    _display_name(rec, dup_last_names, confirmed_new_fullnames),
+                    display(rec),
                     f"{rec.full_name} ({where}) matches {count} Transfer News rows — only one can be right.",
                     "blocking",
                 ))
@@ -559,7 +586,7 @@ def verify(
     # entry such as "Elder Example | JC" has a row to act on.
     for rec in wrongly_masked:
         old_rec = old_by_fullname[_norm_key(rec.full_name)]
-        name = _display_name(rec, dup_last_names, confirmed_new_fullnames)
+        name = display(rec)
         zone = strip_zone_suffix(rec.zone).upper()
         area = rec.area.upper()
         old_zone = strip_zone_suffix(old_rec.zone).upper()
@@ -581,7 +608,7 @@ def verify(
             "New/Existing Zone": zone,
             "New/Existing Area": area,
             "New/Existing Companion(s)": " & ".join(dict.fromkeys(
-                _display_name(current_by_fullname[_norm_key(c)], dup_last_names, confirmed_new_fullnames)
+                display(current_by_fullname[_norm_key(c)])
                 if _norm_key(c) in current_by_fullname
                 else c.split(",")[0].strip().upper()
                 for c in rec.companions

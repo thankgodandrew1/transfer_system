@@ -31,7 +31,9 @@ if (form && overlay) {
       'Rendering Word and PDF documents…',
       'Preparing your secure download package…',
     ];
-    const messages = form.dataset.processingKind === 'movement' ? movementMessages : newsMessages;
+    const reviewMessages = ['Validating uploaded records…', 'Reading current and previous rosters…', 'Preparing the guided review screen…'];
+    const messages = form.dataset.processingKind === 'movement' ? movementMessages :
+      (form.querySelector('[name="review_before_publish"]') ? reviewMessages : newsMessages);
     let index = 0;
     window.setInterval(() => {
       index = Math.min(index + 1, messages.length - 1);
