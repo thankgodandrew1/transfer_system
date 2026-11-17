@@ -254,21 +254,3 @@ textarea { width: 100%; min-height: 130px; resize: vertical; padding: 12px 13px;
   .guide-steps li { grid-template-columns: 44px 1fr; gap: 12px; }
   .access-card { padding: 30px 22px; }
 }
-
-/* Guided roster review: wide read-only previews and a compact correction form. */
-.review-workspace .step-card { display: block; margin: 24px 0; padding: 24px; }
-.review-workspace summary { cursor: pointer; font-weight: 700; padding: 8px 0; }
-.review-workspace select { width: 100%; max-width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: white; color: inherit; font: inherit; }
-.review-workspace label { display: grid; gap: 8px; }
-.review-workspace .generator-form { gap: 20px; }
-.review-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
-.roster-scroll { overflow: auto; max-height: 520px; }
-.roster-table { border-collapse: collapse; width: 100%; font-size: 14px; }
-.roster-table th, .roster-table td { text-align: left; padding: 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-.roster-table th { position: sticky; top: 0; background: #eef5f0; z-index: 1; }
-.roster-table tr[hidden] { display: none; }
-.review-workspace .check-card { display: flex; align-items: flex-start; }
-.review-workspace select:focus-visible { outline: 3px solid #997b32; outline-offset: 2px; }
-.review-workspace input:not([type]), .review-workspace input[type="search"] { width: 100%; min-height: 47px; padding: 0 13px; border: 1px solid #cbd7cf; border-radius: 9px; font: inherit; }
-.review-workspace details { font-size: 14px; color: var(--ink); }
-@media (max-width: 700px) { .review-columns { grid-template-columns: 1fr; } .review-workspace .step-card { padding: 16px; } }

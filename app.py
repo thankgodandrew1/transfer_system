@@ -1005,7 +1005,11 @@ def review_job(job_id: str):
             generation_lock.release()
         return redirect(url_for("review_job", job_id=job_id))
     state = load_review(directory)
-    return render_template("review.html", job=job, state=state, summary=review_summary(state))
+    # Static files are cached for a day. A content version prevents an older
+    # editor script being paired with a newly deployed review form.
+    review_version = hashlib.sha256(b"".join((BASE_DIR / "static" / name).read_bytes()
+        for name in ("review.css", "review.js"))).hexdigest()[:12]
+    return render_template("review.html", job=job, state=state, summary=review_summary(state), review_version=review_version)
 
 
 @app.post("/jobs/<job_id>/revise")

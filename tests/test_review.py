@@ -1,7 +1,10 @@
 from dataclasses import asdict
 import io
 import json
+import os
 from pathlib import Path
+import shutil
+import subprocess
 
 import openpyxl
 import pandas as pd
@@ -265,6 +268,28 @@ def test_upload_goes_to_review_without_generating_documents(monkeypatch, tmp_pat
     assert response.status_code == 200
     assert b"Roster preview" in response.data
     assert not list(root.glob("*/outputs/*.pdf"))
+
+
+@pytest.mark.skipif(os.getenv("RUN_REVIEW_UI_TESTS") != "1", reason="optional Node/jsdom interaction tests")
+@pytest.mark.parametrize("completed", [False, True])
+def test_review_ui_interactions(monkeypatch, tmp_path, state, completed):
+    client, root, token = _client(monkeypatch, tmp_path)
+    state["current"][2]["zone"] = "OTHER ZONE"
+    job_id, directory = _draft(root, state)
+    if completed:
+        manifest = json.loads((directory / "manifest.json").read_text())
+        manifest["status"] = "complete"
+        webapp._write_manifest(directory, manifest)
+    response = client.get(f"/jobs/{job_id}/review")
+    assert response.status_code == 200
+    html = tmp_path / "review.html"
+    html.write_bytes(response.data)
+    project = Path(__file__).resolve().parents[1]
+    command = [shutil.which("node") or "node", str(project / "tests" / "review_ui.cjs"), str(html), str(project / "static" / "review.js")]
+    if completed:
+        command.append("--completed")
+    result = subprocess.run(command, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("replacement", ["none", "pdf", "text"])

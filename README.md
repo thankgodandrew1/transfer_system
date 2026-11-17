@@ -141,6 +141,17 @@ python -m pytest -q
 
 The normal suite uses synthetic records. Never commit real input or generated output files.
 
+Optional review UI interaction checks use Node.js and a temporary jsdom installation (not a production dependency):
+
+```powershell
+npm install --prefix tmp/ui-test-runtime jsdom --no-audit --no-fund --ignore-scripts
+$env:REVIEW_TEST_JSDOM=(Resolve-Path 'tmp/ui-test-runtime/node_modules/jsdom').Path
+$env:RUN_REVIEW_UI_TESTS='1'
+python -m pytest -q tests/test_review.py tests/test_web.py
+```
+
+These check roster tabs, keyboard navigation, search and zone filtering, editor selection, companion checkbox submission, reset behaviour and read-only completed reviews. They do not replace visual browser testing. Review CSS and JavaScript URLs are versioned automatically when their content changes, so deployments cannot retain the previous editor script from the browser's static-file cache.
+
 ## Walkthrough video
 
 The **How to use** page embeds a 56-second, English-narrated, captioned, sanitized walkthrough. Its presenter notes are in [docs/walkthrough-script.md](docs/walkthrough-script.md), and its narration source is `assets/walkthrough-narration.wav`. Rebuild the video after a major UI change with:
