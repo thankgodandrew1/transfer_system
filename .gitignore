@@ -1,4 +1,5 @@
 # Confidential inputs and generated transfer artifacts
+/transfer_news_guide.mp4
 data/*.pdf
 data/*.xlsx
 data/manual_corrections.csv

@@ -200,6 +200,23 @@ textarea { width: 100%; min-height: 130px; resize: vertical; padding: 12px 13px;
 .movement-guide-heading { margin-top: 62px; padding-top: 42px; border-top: 1px solid var(--line); }
 .video-frame { overflow: hidden; margin: -34px 0 50px; position: relative; z-index: 2; border: 8px solid white; border-radius: 18px; background: var(--green-950); box-shadow: var(--shadow); aspect-ratio: 16/9; }
 .video-frame video { width: 100%; height: 100%; display: block; }
+.walkthrough-library { position: relative; margin-top: -34px; margin-bottom: 62px; }
+.walkthrough-card + .walkthrough-card { margin-top: 40px; padding-top: 34px; border-top: 1px solid var(--line); }
+.walkthrough-heading { display: flex; justify-content: space-between; align-items: start; gap: 24px; }
+.walkthrough-heading h2 { margin-bottom: 9px; color: var(--green-950); font-family: Georgia, serif; font-size: 32px; line-height: 1.15; }
+.walkthrough-heading > div > p:last-child { max-width: 650px; margin-bottom: 0; color: var(--muted); font-size: 13px; }
+.walkthrough-duration { flex-shrink: 0; margin-top: 24px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: white; text-align: right; }
+.walkthrough-duration time { display: block; color: var(--green-800); font-size: 12px; font-weight: 800; }
+.walkthrough-duration small { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+.walkthrough-card .video-frame { margin: 20px 0 0; }
+.walkthrough-card .detailed-video-frame { aspect-ratio: 80/43; }
+@media (max-width: 600px) {
+  .walkthrough-heading { flex-direction: column; gap: 12px; }
+  .walkthrough-duration { display: flex; align-items: center; gap: 12px; margin-top: 0; padding: 7px 10px; }
+  .walkthrough-duration small { margin-top: 0; }
+  .walkthrough-heading h2 { font-size: 29px; }
+  .walkthrough-card .video-frame { border-width: 4px; border-radius: 12px; }
+}
 .guide-steps { padding: 0; margin: 0; list-style: none; }
 .guide-steps li { display: grid; grid-template-columns: 64px 1fr; gap: 22px; padding: 26px 0; border-bottom: 1px solid var(--line); }
 .guide-steps > li > span { color: var(--gold); font-family: Georgia, serif; font-size: 28px; font-weight: 800; }

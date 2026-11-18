@@ -1,9 +1,54 @@
 from __future__ import annotations
 
 import io
+from html.parser import HTMLParser
 from pathlib import Path
 
 import app as webapp
+
+
+def test_guide_has_two_independent_lazy_video_players(monkeypatch, tmp_path: Path) -> None:
+    class Videos(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.players = []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "video":
+                self.players.append(dict(attrs, sources=[], captions=[]))
+            elif tag == "source":
+                self.players[-1]["sources"].append(attrs["src"])
+            elif tag == "track":
+                self.players[-1]["captions"].append(attrs["src"])
+
+    client = _client(monkeypatch, tmp_path)
+    page = client.get("/guide")
+    assert page.status_code == 200
+    parsed = Videos()
+    parsed.feed(page.data.decode())
+    assert len(parsed.players) == 2
+    assert all(player["preload"] == "none" and "controls" in player and "playsinline" in player for player in parsed.players)
+    assert parsed.players[0]["sources"] == ["/static/walkthrough.mp4"]
+    assert parsed.players[0]["captions"] == ["/static/walkthrough.vtt"]
+    assert parsed.players[1]["sources"] == ["/static/walkthrough-detailed.mp4"]
+    assert not parsed.players[1]["captions"]  # Do not attach the first video's unrelated captions.
+    for player in parsed.players:
+        assert client.get(player["poster"]).status_code == 200
+
+
+def test_detailed_walkthrough_supports_range_requests(monkeypatch, tmp_path: Path) -> None:
+    client = _client(monkeypatch, tmp_path)
+    path = webapp.BASE_DIR / "static" / "walkthrough-detailed.mp4"
+    assert 0 < path.stat().st_size < 100 * 1024 * 1024
+    response = client.get("/static/walkthrough-detailed.mp4", headers={"Range": "bytes=0-1023"})
+    try:
+        assert response.status_code == 206
+        assert response.mimetype == "video/mp4"
+        assert len(response.data) == 1024
+        assert response.headers["Content-Range"] == f"bytes 0-1023/{path.stat().st_size}"
+    finally:
+        response.close()
 
 
 def _client(monkeypatch, tmp_path: Path):

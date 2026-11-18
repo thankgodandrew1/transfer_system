@@ -154,11 +154,24 @@ These check roster tabs, keyboard navigation, search and zone filtering, editor 
 
 ## Walkthrough video
 
-The **How to use** page embeds a 56-second, English-narrated, captioned, sanitized walkthrough. Its presenter notes are in [docs/walkthrough-script.md](docs/walkthrough-script.md), and its narration source is `assets/walkthrough-narration.wav`. Rebuild the video after a major UI change with:
+The **How to use** page includes two walkthroughs. Both load their video only when played, keeping the guide lightweight:
+
+- **Quick overview:** the original 56-second, English-narrated, captioned walkthrough. Its presenter notes are in [docs/walkthrough-script.md](docs/walkthrough-script.md), and narration is in `assets/walkthrough-narration.wav`.
+- **Detailed walkthrough:** the 12-minute screen recording in `static/walkthrough-detailed.mp4`, with its own poster. The large original `transfer_news_guide.mp4` remains unchanged and is excluded from Git; commit the compressed static copy instead.
+
+Rebuild the quick overview after a major UI change with:
 
 ```powershell
 python scripts/build_walkthrough.py
 ```
+
+To rebuild the detailed recording's web copy and poster (requires the development dependencies):
+
+```powershell
+python scripts/prepare_detailed_walkthrough.py
+```
+
+The compression preserves the original screen dimensions, uses browser-compatible H.264/AAC, reduces the frame rate for a screen tutorial, and places MP4 playback metadata at the beginning for progressive playback. It never replaces the source recording.
 
 ## Free deployment
 

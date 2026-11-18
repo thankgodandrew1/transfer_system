@@ -3,7 +3,16 @@
 {% block content %}
 <section class="guide-hero"><div class="shell narrow"><p class="eyebrow">User walkthrough</p><h1>From iMOS export to Transfer News and movement plan.</h1><p>Generate the verified news first, then compare it with the previous cycle to prepare driver movements. Use sanitized sample files when demonstrating the system publicly.</p></div></section>
 <section class="guide-section"><div class="shell narrow">
-  <div class="video-frame"><video controls preload="metadata" poster="{{ url_for('static', filename='video-poster.png') }}" aria-label="Narrated English walkthrough for the Transfer News Generator"><source src="{{ url_for('static', filename='walkthrough.mp4') }}" type="video/mp4"><track kind="captions" src="{{ url_for('static', filename='walkthrough.vtt') }}" srclang="en" label="English" default>Your browser cannot play the video. Use the written steps below.</video></div>
+  <div class="walkthrough-library" aria-label="Video walkthroughs">
+    <article class="walkthrough-card" aria-labelledby="quick-walkthrough-heading">
+      <div class="walkthrough-heading"><div><p class="eyebrow">Walkthrough 01</p><h2 id="quick-walkthrough-heading">Quick overview</h2><p>A short introduction to the records, generation process, and movement plan.</p></div><span class="walkthrough-duration"><time datetime="PT56S">56 seconds</time><small>Narrated · captioned</small></span></div>
+      <div class="video-frame"><video controls playsinline preload="none" poster="{{ url_for('static', filename='video-poster.png') }}" aria-label="Narrated English walkthrough for the Transfer News Generator"><source src="{{ url_for('static', filename='walkthrough.mp4') }}" type="video/mp4"><track kind="captions" src="{{ url_for('static', filename='walkthrough.vtt') }}" srclang="en" label="English" default>Your browser cannot play the video. Use the written steps below.</video></div>
+    </article>
+    <article class="walkthrough-card" aria-labelledby="detailed-walkthrough-heading">
+      <div class="walkthrough-heading"><div><p class="eyebrow">Walkthrough 02</p><h2 id="detailed-walkthrough-heading">Detailed walkthrough</h2><p>Follow the updated workflow on screen, from uploading records to reviewing assignments and downloading the package.</p></div><span class="walkthrough-duration"><time datetime="PT12M13S">12 min 13 sec</time><small>Screen recording</small></span></div>
+      <div class="video-frame detailed-video-frame"><video controls playsinline preload="none" poster="{{ url_for('static', filename='walkthrough-detailed-poster.jpg') }}" aria-label="Detailed screen-recorded walkthrough for the Transfer News Generator"><source src="{{ url_for('static', filename='walkthrough-detailed.mp4') }}" type="video/mp4">Your browser cannot play this video. <a href="{{ url_for('static', filename='walkthrough-detailed.mp4') }}">Open the detailed walkthrough.</a></video></div>
+    </article>
+  </div>
   <div class="guide-subheading"><p class="eyebrow">Workflow one</p><h2>Generate Transfer News</h2></div>
   <ol class="guide-steps">
     <li><span>01</span><div><h2>Export the four records</h2><p>Prepare the current Transfer Management PDF, previous Transfer News PDF, current roster report, and previous roster report.</p></div></li>
